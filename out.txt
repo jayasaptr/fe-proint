@@ -1,0 +1,6 @@
+
+C:\DH\e-recruitment\fe\src\pages\admin\ApplicationDetailPage.tsx
+  56:14  error  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 1 problem (1 error, 0 warnings)
+
