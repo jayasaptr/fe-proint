@@ -117,7 +117,7 @@ export const ApplyJobModal = ({
   const [pageCity, setPageCity] = useState(1);
   const [hasMoreCity, setHasMoreCity] = useState(false);
   const [openCity, setOpenCity] = useState(false);
-  const [selectedProvinceCode, setSelectedProvinceCode] = useState<string>('');
+  const [_selectedProvinceCode, setSelectedProvinceCode] = useState<string>('');
   const [selectedProvinceId, setSelectedProvinceId] = useState<number | null>(null);
   const [isLoadingRegencies, setIsLoadingRegencies] = useState(false);
 
