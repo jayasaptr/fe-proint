@@ -65,7 +65,9 @@ const CareerPage: React.FC = () => {
 
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [draftOptionId, setDraftOptionId] = useState<number | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<number | null>(null);
   useEffect(() => {
     const fetchCategories = async () => {
@@ -85,15 +87,15 @@ const CareerPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!selectedCategoryId) {
+    if (!draftCategoryId) {
       setCategoryOptions([]);
-      setSelectedOptionId(null);
+      setDraftOptionId(null);
       return;
     }
     const fetchOptions = async () => {
       setIsLoadingOptions(true);
       try {
-        const res = await positionAuditService.getOptionsByCategory(selectedCategoryId);
+        const res = await positionAuditService.getOptionsByCategory(draftCategoryId);
         if (res.success) {
           setCategoryOptions(res.data);
         }
@@ -104,7 +106,7 @@ const CareerPage: React.FC = () => {
       }
     };
     fetchOptions();
-  }, [selectedCategoryId]);
+  }, [draftCategoryId]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -161,15 +163,17 @@ const CareerPage: React.FC = () => {
 
   const handleSearchSubmit = useCallback(() => {
     const normalizedSearch = searchInput.trim();
-    const isSameSearch = normalizedSearch === searchTerm;
+    const isSameSearch = normalizedSearch === searchTerm && draftCategoryId === selectedCategoryId && draftOptionId === selectedOptionId;
 
     setCurrentPage(1);
     setSearchTerm(normalizedSearch);
+    setSelectedCategoryId(draftCategoryId);
+    setSelectedOptionId(draftOptionId);
 
     if (currentPage === 1 && isSameSearch) {
       fetchVacancies();
     }
-  }, [currentPage, fetchVacancies, searchInput, searchTerm]);
+  }, [currentPage, fetchVacancies, searchInput, searchTerm, draftCategoryId, selectedCategoryId, draftOptionId, selectedOptionId]);
 
   useEffect(() => {
     fetchVacancies();
@@ -183,23 +187,21 @@ const CareerPage: React.FC = () => {
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
       <HeroBanner />
 
-      <div className="max-w-6xl mx-auto px-4 -mt-12 relative z-10">
+      <div className="max-w-6xl mx-auto px-4 -mt-8 relative z-10">
         <FilterBar
           searchTerm={searchInput}
           onSearchChange={(v: string) => setSearchInput(v)}
           onSearchSubmit={handleSearchSubmit}
           categories={categories}
           categoryOptions={categoryOptions}
-          selectedCategoryId={selectedCategoryId}
-          selectedOptionId={selectedOptionId}
+          selectedCategoryId={draftCategoryId}
+          selectedOptionId={draftOptionId}
           onCategoryChange={(val: string) => {
-            setSelectedCategoryId(val === "all" ? null : Number(val));
-            setSelectedOptionId(null);
-            setCurrentPage(1);
+            setDraftCategoryId(val === "all" ? null : Number(val));
+            setDraftOptionId(null);
           }}
           onOptionChange={(val: string) => {
-            setSelectedOptionId(val === "all" ? null : Number(val));
-            setCurrentPage(1);
+            setDraftOptionId(val === "all" ? null : Number(val));
           }}
           isLoadingCategories={isLoadingCategories}
           isLoadingOptions={isLoadingOptions}
@@ -281,53 +283,57 @@ const FilterBar = ({
   onCategoryChange, onOptionChange,
   isLoadingCategories, isLoadingOptions
 }: any) => (
-  <Card className="p-6 mb-10 shadow-xl border-slate-100 rounded-2xl">
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 size-5" />
-          <Input
-            value={searchTerm}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                onSearchSubmit();
-              }
-            }}
-            placeholder="Cari posisi..."
-            className="pl-10 h-12 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-primary text-slate-700 font-medium text-base placeholder:text-slate-400 placeholder:font-normal"
-          />
-        </div>
+  <Card className="p-2 md:p-1.5 mb-10 shadow-lg border-slate-100 rounded-2xl md:rounded-full bg-white w-full">
+    <div className="flex flex-col md:flex-row items-stretch md:items-center divide-y md:divide-y-0 md:divide-x divide-slate-100 md:divide-slate-200">
+      <div className="flex-[1.5] flex items-center px-4 py-1 md:py-0">
+        <Search className="text-slate-400 size-5 shrink-0" />
+        <Input
+          value={searchTerm}
+          onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onSearchSubmit();
+            }
+          }}
+          placeholder="Search for Job Posting"
+          className="border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 text-slate-700 bg-transparent h-12 px-3 w-full placeholder:text-slate-400 placeholder:font-normal text-sm md:text-base"
+        />
+      </div>
+      <div className="flex-1 flex items-center px-4 py-1 md:py-0">
+        <Select value={selectedCategoryId ? selectedCategoryId.toString() : "all"} onValueChange={onCategoryChange}>
+          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-[placeholder]:text-slate-400 text-sm md:text-base">
+            <SelectValue placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"} />
+          </SelectTrigger>
+          <SelectContent className="font-medium text-slate-700">
+            <SelectItem value="all">Semua Kategori</SelectItem>
+            {categories.map((c: any) => (
+              <SelectItem key={c.PosAdtTypeId} value={c.PosAdtTypeId.toString()}>{c.PosAdtName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex-1 flex items-center px-4 py-1 md:py-0">
+        <Select value={selectedOptionId ? selectedOptionId.toString() : "all"} onValueChange={onOptionChange} disabled={!selectedCategoryId}>
+          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-[placeholder]:text-slate-400 text-sm md:text-base">
+            <SelectValue placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"} />
+          </SelectTrigger>
+          <SelectContent className="font-medium text-slate-700">
+            <SelectItem value="all">Semua Opsi</SelectItem>
+            {categoryOptions.map((o: any) => (
+              <SelectItem key={o.PosAdtGrpId} value={o.PosAdtGrpId.toString()}>{o.PosAdtGrpName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="px-3 md:px-0 md:pl-2 shrink-0 pt-3 md:pt-0 pb-1 md:pb-0">
         <Button
           type="button"
           onClick={onSearchSubmit}
-          className="h-12 rounded-xl px-5 font-semibold shrink-0"
+          className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
         >
-          Cari
+          Search
         </Button>
       </div>
-      <Select value={selectedCategoryId ? selectedCategoryId.toString() : "all"} onValueChange={onCategoryChange}>
-        <SelectTrigger className="w-full !h-12 rounded-xl bg-slate-50 border-slate-200 focus:ring-primary text-slate-700 font-medium text-base data-[placeholder]:text-slate-400 data-[placeholder]:font-normal">
-          <SelectValue placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"} />
-        </SelectTrigger>
-        <SelectContent className="font-medium text-slate-700">
-          <SelectItem value="all">Semua Kategori</SelectItem>
-          {categories.map((c: any) => (
-            <SelectItem key={c.PosAdtTypeId} value={c.PosAdtTypeId.toString()}>{c.PosAdtName}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={selectedOptionId ? selectedOptionId.toString() : "all"} onValueChange={onOptionChange} disabled={!selectedCategoryId}>
-        <SelectTrigger className="w-full !h-12 rounded-xl bg-slate-50 border-slate-200 focus:ring-primary text-slate-700 font-medium text-base data-[placeholder]:text-slate-400 data-[placeholder]:font-normal">
-          <SelectValue placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"} />
-        </SelectTrigger>
-        <SelectContent className="font-medium text-slate-700">
-          <SelectItem value="all">Semua Opsi</SelectItem>
-          {categoryOptions.map((o: any) => (
-            <SelectItem key={o.PosAdtGrpId} value={o.PosAdtGrpId.toString()}>{o.PosAdtGrpName}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   </Card>
 );
