@@ -362,6 +362,16 @@ const VacancyCard = ({
   );
 };
 
+const useWindowWidth = () => {
+  const [width, setWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const handleResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  return width;
+};
+
 const PaginationNav = ({
   pagination,
   onPageChange,
@@ -369,15 +379,44 @@ const PaginationNav = ({
   pagination: PaginationState;
   onPageChange: (p: number) => void;
 }) => {
-  const getPageNumbers = () => {
+  const width = useWindowWidth();
+  const isMobile = width < 640;   // sm breakpoint
+  const isTablet = width < 1024;  // lg breakpoint
+
+  const getPageNumbers = (): (number | string)[] => {
     const totalPages = pagination.pages;
     const currentPage = pagination.page;
 
-    if (totalPages <= 5) {
-       return Array.from({ length: totalPages }, (_, i) => i + 1);
+    // Mobile: show 2 page numbers only
+    if (isMobile) {
+      if (totalPages <= 2) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+      }
+      if (currentPage >= totalPages) {
+        return [totalPages - 1, totalPages];
+      }
+      return [currentPage, currentPage + 1];
     }
 
-    // Format: 1 2 3 .. 12
+    // Tablet: show fewer pages (max 5 items)
+    if (isTablet) {
+      if (totalPages <= 3) {
+        return Array.from({ length: totalPages }, (_, i) => i + 1);
+      }
+      if (currentPage <= 2) {
+        return [1, 2, 3, "...", totalPages];
+      }
+      if (currentPage >= totalPages - 1) {
+        return [1, "...", totalPages - 2, totalPages - 1, totalPages];
+      }
+      return [1, "...", currentPage, "...", totalPages];
+    }
+
+    // Desktop: full pagination
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
     if (currentPage <= 3) {
       return [1, 2, 3, 4, "...", totalPages];
     }
@@ -392,16 +431,17 @@ const PaginationNav = ({
   const pages = getPageNumbers();
 
   return (
-    <div className="mt-12 flex justify-start sm:justify-center items-center gap-2 overflow-x-auto pb-4 px-2 snap-x">
+    <div className="mt-12 flex justify-center items-center gap-1.5 sm:gap-2 pb-4 px-2">
       <Button
         variant="outline"
         size="icon"
         onClick={() => onPageChange(pagination.page - 1)}
         disabled={pagination.page <= 1}
-        className="rounded-xl border-slate-200 shrink-0 snap-center"
+        className="rounded-xl border-slate-200 shrink-0 h-9 w-9 sm:h-10 sm:w-10"
       >
         <ChevronLeft size={18} />
       </Button>
+
       {pages.map((p, i) =>
         typeof p === "number" ? (
           <Button
@@ -409,20 +449,21 @@ const PaginationNav = ({
             variant={pagination.page === p ? "default" : "outline"}
             size="icon"
             onClick={() => onPageChange(p)}
-            className={`rounded-xl font-bold shrink-0 snap-center ${pagination.page === p ? "bg-primary text-primary-foreground shadow-lg hover:bg-primary/90" : "text-slate-600 border-slate-200"}`}
+            className={`rounded-xl font-bold shrink-0 h-9 w-9 sm:h-10 sm:w-10 text-sm ${pagination.page === p ? "bg-primary text-primary-foreground shadow-lg hover:bg-primary/90" : "text-slate-600 border-slate-200"}`}
           >
             {p}
           </Button>
         ) : (
-          <span key={i} className="text-slate-400 font-bold shrink-0 px-2 min-w-[20px] text-center">...</span>
+          <span key={i} className="text-slate-400 font-bold shrink-0 px-1 sm:px-2 min-w-[16px] text-center text-sm">...</span>
         )
       )}
+
       <Button
         variant="outline"
         size="icon"
         onClick={() => onPageChange(pagination.page + 1)}
         disabled={pagination.page >= pagination.pages}
-        className="rounded-xl border-slate-200 shrink-0 snap-center"
+        className="rounded-xl border-slate-200 shrink-0 h-9 w-9 sm:h-10 sm:w-10"
       >
         <ChevronRight size={18} />
       </Button>
