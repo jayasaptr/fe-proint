@@ -1,18 +1,21 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import AdminLayout from './components/layout/AdminLayout';
 import { Toaster } from './components/ui/sonner';
-import ApplicationDetailPage from './pages/admin/ApplicationDetailPage';
-import ApplicationsPage from './pages/admin/ApplicationsPage';
-import DashboardPage from './pages/admin/DashboardPage';
-import JobsPage from './pages/admin/JobsPage';
-import UsersPage from './pages/admin/UsersPage';
-import CareerPage from './pages/CareerPage';
-import ChangePasswordPage from './pages/ChangePasswordPage'
-import LoginPage from './pages/LoginPage';
+
+const AdminLayout = lazy(() => import('./components/layout/AdminLayout'));
+const ApplicationDetailPage = lazy(() => import('./pages/admin/ApplicationDetailPage'));
+const ApplicationsPage = lazy(() => import('./pages/admin/ApplicationsPage'));
+const DashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
+const JobsPage = lazy(() => import('./pages/admin/JobsPage'));
+const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
+const CareerPage = lazy(() => import('./pages/CareerPage'));
+const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 
 const App = () => {
   return (
     <BrowserRouter>
+      <Suspense fallback={null}>
       <Routes>
         <Route path="/" element={<CareerPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -27,6 +30,7 @@ const App = () => {
           <Route path="settings" element={<div className="p-8 text-2xl font-bold text-slate-800">System Settings Placeholder</div>} />
         </Route>
       </Routes>
+      </Suspense>
       <Toaster position="top-right" richColors />
     </BrowserRouter>
   );

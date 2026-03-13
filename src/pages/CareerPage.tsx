@@ -6,12 +6,13 @@ import {
   Search,
   X
 } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
-import { ApplyJobModal } from "../components/ApplyJobModal";
 import { positionAuditService, vacancyService, type PosAdtGrpDt, type PosAdtGrpHd, type Vacancy } from "../lib/api/vacancies";
+
+const ApplyJobModal = lazy(() => import("../components/ApplyJobModal").then(m => ({ default: m.ApplyJobModal })));
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -225,10 +226,16 @@ const CareerPage: React.FC = () => {
       )}
 
       {applyingVacancy && (
-        <ApplyJobModal
-          vacancy={applyingVacancy}
-          onClose={() => setApplyingVacancy(null)}
-        />
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        }>
+          <ApplyJobModal
+            vacancy={applyingVacancy}
+            onClose={() => setApplyingVacancy(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -238,7 +245,7 @@ const CareerPage: React.FC = () => {
 
 const HeroBanner = () => (
   <div className="relative h-[350px] w-full overflow-hidden">
-    <img src={HeroImg} alt="Office" className="w-full h-full object-cover" />
+    <img src={HeroImg} alt="Office" className="w-full h-full object-cover" width={1200} height={350} fetchPriority="high" decoding="async" />
     <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/40 to-slate-900/40 flex items-end">
       <div className="max-w-6xl mx-auto px-6 pb-16 w-full text-white text-center md:text-left relative z-10">
         <h1 className="text-4xl md:text-5xl font-bold mb-2">
