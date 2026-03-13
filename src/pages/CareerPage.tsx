@@ -63,6 +63,7 @@ const CareerPage: React.FC = () => {
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
 
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedOptionId, setSelectedOptionId] = useState<number | null>(null);
@@ -158,6 +159,18 @@ const CareerPage: React.FC = () => {
     }
   }, [currentPage, itemsPerPage, searchTerm, selectedCategoryId, selectedOptionId]);
 
+  const handleSearchSubmit = useCallback(() => {
+    const normalizedSearch = searchInput.trim();
+    const isSameSearch = normalizedSearch === searchTerm;
+
+    setCurrentPage(1);
+    setSearchTerm(normalizedSearch);
+
+    if (currentPage === 1 && isSameSearch) {
+      fetchVacancies();
+    }
+  }, [currentPage, fetchVacancies, searchInput, searchTerm]);
+
   useEffect(() => {
     fetchVacancies();
   }, [fetchVacancies]);
@@ -172,8 +185,9 @@ const CareerPage: React.FC = () => {
 
       <div className="max-w-6xl mx-auto px-4 -mt-12 relative z-10">
         <FilterBar
-          searchTerm={searchTerm}
-          onSearchChange={(v: string) => { setSearchTerm(v); setCurrentPage(1); }}
+          searchTerm={searchInput}
+          onSearchChange={(v: string) => setSearchInput(v)}
+          onSearchSubmit={handleSearchSubmit}
           categories={categories}
           categoryOptions={categoryOptions}
           selectedCategoryId={selectedCategoryId}
@@ -261,6 +275,7 @@ const HeroBanner = () => (
 
 const FilterBar = ({
   searchTerm, onSearchChange,
+  onSearchSubmit,
   categories, categoryOptions,
   selectedCategoryId, selectedOptionId,
   onCategoryChange, onOptionChange,
@@ -268,14 +283,28 @@ const FilterBar = ({
 }: any) => (
   <Card className="p-6 mb-10 shadow-xl border-slate-100 rounded-2xl">
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 size-5" />
-        <Input
-          value={searchTerm}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Cari posisi..."
-          className="pl-10 h-12 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-primary text-slate-700 font-medium text-base placeholder:text-slate-400 placeholder:font-normal"
-        />
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 size-5" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                onSearchSubmit();
+              }
+            }}
+            placeholder="Cari posisi..."
+            className="pl-10 h-12 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-primary text-slate-700 font-medium text-base placeholder:text-slate-400 placeholder:font-normal"
+          />
+        </div>
+        <Button
+          type="button"
+          onClick={onSearchSubmit}
+          className="h-12 rounded-xl px-5 font-semibold shrink-0"
+        >
+          Cari
+        </Button>
       </div>
       <Select value={selectedCategoryId ? selectedCategoryId.toString() : "all"} onValueChange={onCategoryChange}>
         <SelectTrigger className="w-full !h-12 rounded-xl bg-slate-50 border-slate-200 focus:ring-primary text-slate-700 font-medium text-base data-[placeholder]:text-slate-400 data-[placeholder]:font-normal">
