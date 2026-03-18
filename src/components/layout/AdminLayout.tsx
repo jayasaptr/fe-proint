@@ -37,6 +37,7 @@ const sidebarGroups = [
     title: 'RECRUITMENT',
     links: [
       { name: 'Jobs', href: '/admin/jobs', icon: List },
+      { name: 'Candidates', href: '/admin/candidates', icon: UserCircle },
       { name: 'Applications', href: '/admin/applications', icon: FileText },
     ]
   },
@@ -249,7 +250,7 @@ const AdminLayout: React.FC = () => {
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 relative">
           <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:16px_16px] opacity-30 z-0 pointer-events-none"></div>
-          <div className="relative z-10 max-w-6xl mx-auto min-h-full flex flex-col pb-0">
+          <div className="relative z-10 mx-auto min-h-full flex flex-col pb-0">
             <Outlet context={{ currentUser }} />
           </div>
         </main>

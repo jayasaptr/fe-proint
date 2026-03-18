@@ -5,6 +5,8 @@ import { Toaster } from './components/ui/sonner';
 const AdminLayout = lazy(() => import('./components/layout/AdminLayout'));
 const ApplicationDetailPage = lazy(() => import('./pages/admin/ApplicationDetailPage'));
 const ApplicationsPage = lazy(() => import('./pages/admin/ApplicationsPage'));
+const CandidateDetailPage = lazy(() => import('./pages/admin/CandidateDetailPage'));
+const CandidatesPage = lazy(() => import('./pages/admin/CandidatesPage'));
 const DashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
 const JobsPage = lazy(() => import('./pages/admin/JobsPage'));
 const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
@@ -23,6 +25,8 @@ const App = () => {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="jobs" element={<JobsPage />} />
+          <Route path="candidates" element={<CandidatesPage />} />
+          <Route path="candidates/:id" element={<CandidateDetailPage />} />
           <Route path="applications" element={<ApplicationsPage />} />
 
           <Route path="applications/:id" element={<ApplicationDetailPage />} />

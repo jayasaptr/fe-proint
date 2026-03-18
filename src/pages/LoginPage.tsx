@@ -6,7 +6,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
-import api from "../lib/axios";
+import axios from "axios";
 
 const slides = [
   {
@@ -25,11 +25,12 @@ const slides = [
 
 const LoginPage: React.FC = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const loginBaseUrl = import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -49,9 +50,15 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await api.post("/auth/login", { username, password });
+      const response = await axios.post(`${loginBaseUrl}/login`, { email, password });
 
-      const { token, user } = response.data;
+      const loginResult = response.data;
+      if (!loginResult?.success || !loginResult?.data?.access_token || !loginResult?.data?.user) {
+        throw new Error(loginResult?.message || "Format response login tidak valid");
+      }
+
+      const token = loginResult.data.access_token;
+      const user = loginResult.data.user;
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
 
@@ -98,17 +105,17 @@ const LoginPage: React.FC = () => {
             )}
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-slate-900">NIK</Label>
+                <Label htmlFor="email" className="text-slate-900">Email</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
                   <Input
-                    id="username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="NIK"
-                    type="text"
+                    id="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    type="email"
                     autoCapitalize="none"
-                    autoComplete="username"
+                    autoComplete="email"
                     autoCorrect="off"
                     className="pl-10 h-12 rounded-xl bg-white text-slate-900 border-slate-200 focus-visible:ring-primary focus-visible:ring-opacity-50"
                   />
