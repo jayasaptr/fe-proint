@@ -17,6 +17,15 @@ const ApplyJobModal = lazy(() => import("../components/ApplyJobModal").then(m =>
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Card,
   CardContent,
   CardFooter,
@@ -53,6 +62,7 @@ const CareerPage: React.FC = () => {
 
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
   const [applyingVacancy, setApplyingVacancy] = useState<Vacancy | null>(null);
+  const [isMaintenanceDialogOpen, setIsMaintenanceDialogOpen] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(9);
@@ -237,7 +247,10 @@ const CareerPage: React.FC = () => {
         <JobModal
           vacancy={selectedVacancy}
           onClose={() => setSelectedVacancy(null)}
-          onApply={(v) => { setSelectedVacancy(null); setApplyingVacancy(v); }}
+          onApply={() => {
+            setSelectedVacancy(null);
+            setIsMaintenanceDialogOpen(true);
+          }}
         />
       )}
 
@@ -253,6 +266,22 @@ const CareerPage: React.FC = () => {
           />
         </Suspense>
       )}
+
+      <AlertDialog open={isMaintenanceDialogOpen} onOpenChange={setIsMaintenanceDialogOpen}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader className="items-start text-left">
+            <AlertDialogTitle>Layanan Lamaran Masih Dalam proses Development</AlertDialogTitle>
+            <AlertDialogDescription>
+              Fitur lamar pekerjaan saat ini masih dalam pengembangan. Silakan tunggu pembaruan selanjutnya.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setIsMaintenanceDialogOpen(false)} className="rounded-xl">
+              Mengerti
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
