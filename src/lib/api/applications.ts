@@ -151,7 +151,7 @@ export interface ApplicationStatisticsResponse {
  * Submit a new application (Public)
  */
 export const submitApplication = async (formData: FormData): Promise<SubmitApplicationResponse> => {
-  const response = await axiosInstance.post<SubmitApplicationResponse>('http://api-recruitment-ptdh.test/api/candidates/apply', formData, {
+  const response = await axiosInstance.post<SubmitApplicationResponse>('http://api-career.ptdh.co.id/api/candidates/apply-job', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
