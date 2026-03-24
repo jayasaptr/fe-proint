@@ -13,6 +13,7 @@ const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
 const CareerPage = lazy(() => import('./pages/CareerPage'));
 const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const TestingDevelopment = lazy(() => import('./pages/TestingDevelopment'));
 
 const App = () => {
   return (
@@ -20,6 +21,7 @@ const App = () => {
       <Suspense fallback={null}>
       <Routes>
         <Route path="/" element={<CareerPage />} />
+        <Route path="/testing-development" element={<TestingDevelopment />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
         <Route path="/admin" element={<AdminLayout />}>

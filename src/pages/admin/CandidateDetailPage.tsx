@@ -6,8 +6,8 @@ import { downloadCandidateDocument, getCandidateById } from '@/lib/api/candidate
 import { 
   ArrowLeft, BriefcaseBusiness, CreditCard, Download, FileText, 
   MapPin, Phone, User, GraduationCap, Building2, Languages, 
-  Fingerprint, Activity, Award, FileCheck, Building, Calendar, 
-  Stethoscope, Printer, Mail, Share2, MoreHorizontal, CheckCircle2, ChevronRight
+  Fingerprint, Activity, Award, FileCheck,
+  Printer, Mail, Share2, MoreHorizontal, ChevronRight
 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -93,7 +93,7 @@ const CandidateDetailPage: React.FC = () => {
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<number | null>(null);
   const [selectedJob, setSelectedJob] = useState<any>(null);
 
-  const { data, isLoading, isFetching, error } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['candidate-detail', id],
     queryFn: () => getCandidateById(id as string),
     enabled: Boolean(id),
@@ -110,8 +110,12 @@ const CandidateDetailPage: React.FC = () => {
   const candidate = data?.success ? data.data : null;
   const mainAddress = candidate?.addresses?.[0];
   const education = candidate?.education || [];
-  const experiences = candidate?.experiences?.length > 0 ? candidate.experiences : candidate?.work_experiences || [];
-  const identities = candidate?.identities?.length > 0 ? candidate.identities : candidate?.cards || [];
+  const experiences = Array.isArray(candidate?.experiences) && candidate.experiences.length > 0
+    ? candidate.experiences
+    : (candidate?.work_experiences ?? []);
+  const identities = Array.isArray(candidate?.identities) && candidate.identities.length > 0
+    ? candidate.identities
+    : (candidate?.cards ?? []);
   const documents = candidate?.documents || [];
   const jobExpected = candidate?.job_expected || [];
   const skills = candidate?.skills || [];
@@ -261,9 +265,9 @@ const CandidateDetailPage: React.FC = () => {
               >
                 <div className="absolute inset-0 bg-orange-500 opacity-0 group-hover:opacity-10 transition-opacity z-10" />
                 {photoSource && !isPhotoError ? (
-                  <img src={photoSource} alt={candidate.CanName} className="w-full h-full object-cover rounded-[1.25rem]" onError={() => setIsPhotoError(true)} />
+                  <img src={photoSource} alt={candidate.CanName} className="w-full h-full object-cover rounded-4xl" onError={() => setIsPhotoError(true)} />
                 ) : (
-                  <div className="w-full h-full bg-slate-100 dark:bg-slate-900 rounded-[1.25rem] flex items-center justify-center">
+                  <div className="w-full h-full bg-slate-100 dark:bg-slate-900 rounded-4xl flex items-center justify-center">
                     <User className="w-16 h-16 text-slate-300" />
                   </div>
                 )}
@@ -379,7 +383,7 @@ const CandidateDetailPage: React.FC = () => {
                      <div 
                        key={idx} 
                        onClick={() => setSelectedJob(item)}
-                       className="p-4 rounded-xl border-l-[4px] border-l-orange-500 bg-slate-50 dark:bg-slate-800/30 border-y border-r border-slate-100 dark:border-slate-800 hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer hover:bg-orange-50/50 dark:hover:bg-slate-800/80"
+                       className="p-4 rounded-xl border-l-4 border-l-orange-500 bg-slate-50 dark:bg-slate-800/30 border-y border-r border-slate-100 dark:border-slate-800 hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer hover:bg-orange-50/50 dark:hover:bg-slate-800/80"
                      >
                        <div>
                          <div className="flex justify-between items-start mb-2">
@@ -427,11 +431,11 @@ const CandidateDetailPage: React.FC = () => {
                            </div>
                            
                            <div className="flex flex-wrap gap-4 mt-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700">
-                             <div className="flex-1 min-w-[120px]">
+                             <div className="flex-1 min-w-30">
                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Duration</p>
                                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{item.JobPrdYear || '0'}y {item.JobPrdMonth || '0'}m</p>
                              </div>
-                             <div className="flex-1 min-w-[120px]">
+                             <div className="flex-1 min-w-30">
                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Final Salary</p>
                                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{formatCurrency(salary)}</p>
                              </div>
