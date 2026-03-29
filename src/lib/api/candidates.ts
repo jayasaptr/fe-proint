@@ -1,3 +1,8 @@
+// Apply candidate ke SQL Server
+export const postApplyToSqlServer = async (canId: string | number): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post(`${localApiBaseUrl}/candidates/${canId}/apply-sqlserver`);
+  return response.data;
+};
 import api from '../axios';
 
 export interface CandidateAddress {
@@ -129,6 +134,10 @@ export interface CandidateIdentity {
   CardNumber?: string;
   number?: string;
   card_type_name?: string;
+  type?: {
+    CardType?: string;
+    CardTypeId?: number | string;
+  };
 }
 
 export interface CandidateDocument {
@@ -319,6 +328,7 @@ export interface Candidate {
   experiences?: CandidateExperience[];
   work_experiences?: CandidateExperience[];
   identities?: CandidateIdentity[];
+  id_cards?: CandidateIdentity[];
   cards?: CandidateIdentity[];
   documents?: CandidateDocument[];
   job_expected?: CandidateJobExpected[];
@@ -381,3 +391,5 @@ export const downloadCandidateDocument = async (canId: string | number, canDocId
 
   return response.data;
 };
+
+

@@ -113,9 +113,11 @@ const CandidateDetailPage: React.FC = () => {
   const experiences = Array.isArray(candidate?.experiences) && candidate.experiences.length > 0
     ? candidate.experiences
     : (candidate?.work_experiences ?? []);
-  const identities = Array.isArray(candidate?.identities) && candidate.identities.length > 0
-    ? candidate.identities
-    : (candidate?.cards ?? []);
+  const identities = Array.isArray(candidate?.id_cards) && candidate.id_cards.length > 0
+    ? candidate.id_cards
+    : Array.isArray(candidate?.identities) && candidate.identities.length > 0
+      ? candidate.identities
+      : (candidate?.cards ?? []);
   const documents = candidate?.documents || [];
   const jobExpected = candidate?.job_expected || [];
   const skills = candidate?.skills || [];
@@ -336,7 +338,7 @@ const CandidateDetailPage: React.FC = () => {
                   {identities.map((item: any, i: number) => (
                     <div key={i} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between">
                       <div className="overflow-hidden pr-3">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.CardTypeName || item.card_type_name}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.type?.CardType || item.CardTypeName || item.card_type_name}</p>
                         <p className="font-mono font-bold text-slate-700 dark:text-slate-300 mt-0.5 truncate">{item.CardNumber || item.number || '-'}</p>
                       </div>
                       <CreditCard className="w-5 h-5 text-slate-300 shrink-0" />

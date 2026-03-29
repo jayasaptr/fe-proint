@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useDebounce } from '@/hooks/useDebounce';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { getCandidates, type Candidate } from '@/lib/api/candidates';
+import { getCandidates, type Candidate, postApplyToSqlServer } from '@/lib/api/candidates';
 import { Eye, Search, Users, User, Activity, Filter, Download, Mail, Phone, Award, BriefcaseBusiness } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -75,6 +75,9 @@ const CandidatesPage: React.FC = () => {
   const candidates = candidatesResponse?.success ? candidatesResponse.data?.data || [] : [];
   const totalPages = Math.max(1, candidatesResponse?.data?.last_page || 1);
   const totalItems = candidatesResponse?.data?.total || 0;
+
+  // State loading per kandidat
+  const [loadingApply, setLoadingApply] = useState<{ [canId: number]: boolean }>({});
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] min-h-screen bg-slate-50 dark:bg-slate-950 animate-in fade-in duration-700">
@@ -231,13 +234,40 @@ const CandidatesPage: React.FC = () => {
                           );
                         })()}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button
                           size="sm"
                           className="h-9 px-4 rounded-xl font-medium bg-white text-slate-700 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 shadow-sm transition-all"
                           onClick={() => navigate(`/admin/candidates/${candidate.CanId}`)}
                         >
                           <Eye className="w-4 h-4 mr-2" /> Details
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 px-4 rounded-xl font-medium border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-slate-700 shadow-sm transition-all"
+                          disabled={!!loadingApply[candidate.CanId]}
+                          onClick={async () => {
+                            setLoadingApply((prev) => ({ ...prev, [candidate.CanId]: true }));
+                            try {
+                              const res = await postApplyToSqlServer(candidate.CanId);
+                              if (res.success) {
+                                toast.success(res.message || 'Berhasil apply ke SQL Server');
+                              } else {
+                                toast.error(res.message || 'Gagal apply ke SQL Server');
+                              }
+                            } catch (err) {
+                              toast.error('Gagal apply ke SQL Server');
+                            } finally {
+                              setLoadingApply((prev) => ({ ...prev, [candidate.CanId]: false }));
+                            }
+                          }}
+                        >
+                          {loadingApply[candidate.CanId] ? (
+                            <span className="flex items-center"><span className="animate-spin mr-2 w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full"></span>Loading...</span>
+                          ) : (
+                            <><Download className="w-4 h-4 mr-2" /> Apply ke SQL Server</>
+                          )}
                         </Button>
                       </td>
                     </tr>
