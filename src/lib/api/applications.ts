@@ -1,5 +1,5 @@
-import axiosInstance from '../axios';
-import { type Job } from './jobs';
+import axiosInstance from "../axios";
+import { type Job } from "./jobs";
 
 export interface Identity {
   id: number;
@@ -68,7 +68,7 @@ export interface Application {
   has_followed_recruitment?: boolean;
   followed_recruitment_desc?: string | null;
   is_declared_true?: boolean;
-  status: 'New' | 'Review' | 'Rejected' | 'Hired';
+  status: "New" | "Review" | "Rejected" | "Hired";
   submitted_at: string;
   created_at: string;
   updated_at: string;
@@ -90,7 +90,7 @@ export interface ApplicationListResponse {
     total_pages: number;
     has_next: boolean;
     has_prev: boolean;
-  }
+  };
 }
 
 export interface ApplicationDetailResponse {
@@ -120,7 +120,7 @@ export interface CaptchaConfigResponse {
   data: {
     site_key: string;
     verify_url: string;
-  }
+  };
 }
 
 export interface CaptchaVerifyResponse {
@@ -145,74 +145,120 @@ export interface ApplicationStatisticsResponse {
       count: number;
     }[];
     recent_applications: number;
-  }
+  };
 }
 
 /**
  * Submit a new application (Public)
  */
-export const submitApplication = async (formData: FormData): Promise<SubmitApplicationResponse> => {
-  const baseUrl = import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
-  const response = await axiosInstance.post<SubmitApplicationResponse>(baseUrl+'/candidates/apply-job', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
+export const submitApplication = async (
+  formData: FormData,
+): Promise<SubmitApplicationResponse> => {
+  const baseUrl =
+    import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
+  const response = await axiosInstance.post<SubmitApplicationResponse>(
+    `${baseUrl}/candidates/apply-job`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
     },
-  });
+  );
   return response.data;
 };
 
 /**
  * Check if candidate already applied to a specific job (Recommended pre-submit check)
  */
-export const checkApplication = async (email: string, jobId: number): Promise<CheckApplicationResponse> => {
-  const response = await axiosInstance.post<CheckApplicationResponse>('/candidates/check-application', {
-    email,
-    job_id: jobId,
-  });
+export const checkApplication = async (
+  email: string,
+  jobId: number,
+): Promise<CheckApplicationResponse> => {
+  const response = await axiosInstance.post<CheckApplicationResponse>(
+    "/candidates/check-application",
+    {
+      email,
+      job_id: jobId,
+    },
+  );
   return response.data;
 };
 
 /**
  * Check if email has been used before (informational only)
  */
-export const checkEmail = async (email: string): Promise<CheckApplicationResponse> => {
-  const response = await axiosInstance.post<CheckApplicationResponse>('/candidates/check-email', { email });
+export const checkEmail = async (
+  email: string,
+): Promise<CheckApplicationResponse> => {
+  const response = await axiosInstance.post<CheckApplicationResponse>(
+    "/candidates/check-email",
+    { email },
+  );
   return response.data;
 };
 
 /**
  * Check if identity number has been used before (informational only)
  */
-export const checkIdentity = async (identityNumber: string): Promise<CheckApplicationResponse> => {
-  const response = await axiosInstance.post<CheckApplicationResponse>('/candidates/check-identity', {
-    identity_number: identityNumber,
-  });
+export const checkIdentity = async (
+  identityNumber: string,
+): Promise<CheckApplicationResponse> => {
+  const response = await axiosInstance.post<CheckApplicationResponse>(
+    "/candidates/check-identity",
+    {
+      identity_number: identityNumber,
+    },
+  );
   return response.data;
 };
 
 /**
  * Get all applications (Admin)
  */
-export const getApplications = async (params?: { search?: string; job_id?: string; status?: string; location?: string; site?: string; start_date?: string; end_date?: string }): Promise<ApplicationListResponse> => {
-  const response = await axiosInstance.get<ApplicationListResponse>('/applications', { params });
+export const getApplications = async (params?: {
+  search?: string;
+  job_id?: string;
+  status?: string;
+  location?: string;
+  site?: string;
+  start_date?: string;
+  end_date?: string;
+}): Promise<ApplicationListResponse> => {
+  const response = await axiosInstance.get<ApplicationListResponse>(
+    "/applications",
+    { params },
+  );
   return response.data;
 };
 
 /**
  * Get application details by ID (Admin)
  */
-export const getApplicationById = async (id: string): Promise<ApplicationDetailResponse> => {
-  const response = await axiosInstance.get<ApplicationDetailResponse>(`/applications/${id}`);
+export const getApplicationById = async (
+  id: string,
+): Promise<ApplicationDetailResponse> => {
+  const response = await axiosInstance.get<ApplicationDetailResponse>(
+    `/applications/${id}`,
+  );
   return response.data;
 };
 
 /**
  * Export applications to Excel (HR & Admin only)
  */
-export const exportApplications = async (params?: { search?: string; job_id?: string; status?: string; location?: string; site?: string; start_date?: string; end_date?: string }): Promise<Blob> => {
-  const response = await axiosInstance.get('/applications/export', {
+export const exportApplications = async (params?: {
+  search?: string;
+  job_id?: string;
+  status?: string;
+  location?: string;
+  site?: string;
+  start_date?: string;
+  end_date?: string;
+}): Promise<Blob> => {
+  const response = await axiosInstance.get("/applications/export", {
     params,
-    responseType: 'blob',
+    responseType: "blob",
   });
   return response.data;
 };
@@ -220,10 +266,18 @@ export const exportApplications = async (params?: { search?: string; job_id?: st
 /**
  * Export application attachments to ZIP (HR & Admin only)
  */
-export const exportAttachments = async (params?: { search?: string; job_id?: string; status?: string; location?: string; site?: string; start_date?: string; end_date?: string }): Promise<Blob> => {
-  const response = await axiosInstance.get('/applications/export-attachments', {
+export const exportAttachments = async (params?: {
+  search?: string;
+  job_id?: string;
+  status?: string;
+  location?: string;
+  site?: string;
+  start_date?: string;
+  end_date?: string;
+}): Promise<Blob> => {
+  const response = await axiosInstance.get("/applications/export-attachments", {
     params,
-    responseType: 'blob',
+    responseType: "blob",
   });
   return response.data;
 };
@@ -232,15 +286,22 @@ export const exportAttachments = async (params?: { search?: string; job_id?: str
  * Get Captcha Config
  */
 export const getCaptchaConfig = async (): Promise<CaptchaConfigResponse> => {
-  const response = await axiosInstance.get<CaptchaConfigResponse>('/candidates/captcha-config');
+  const response = await axiosInstance.get<CaptchaConfigResponse>(
+    "/candidates/captcha-config",
+  );
   return response.data;
 };
 
 /**
  * Test Captcha (Development Only)
  */
-export const testCaptcha = async (token: string): Promise<CaptchaVerifyResponse> => {
-  const response = await axiosInstance.post<CaptchaVerifyResponse>('/applications/test-captcha', { captcha_token: token });
+export const testCaptcha = async (
+  token: string,
+): Promise<CaptchaVerifyResponse> => {
+  const response = await axiosInstance.post<CaptchaVerifyResponse>(
+    "/applications/test-captcha",
+    { captcha_token: token },
+  );
   return response.data;
 };
 
@@ -248,37 +309,56 @@ export const testCaptcha = async (token: string): Promise<CaptchaVerifyResponse>
  * Download Application Photo
  */
 export const downloadPhoto = async (applicationId: string): Promise<Blob> => {
-  const response = await axiosInstance.get(`/applications/${applicationId}/download-photo`, {
-    responseType: 'blob',
-  });
+  const response = await axiosInstance.get(
+    `/applications/${applicationId}/download-photo`,
+    {
+      responseType: "blob",
+    },
+  );
   return response.data;
 };
 
 /**
  * Update Application Status (HR & Admin only)
  */
-export const updateApplicationStatus = async (id: string, status: string): Promise<any> => {
-  const response = await axiosInstance.put(`/applications/${id}/status`, { status });
+export const updateApplicationStatus = async (
+  id: string,
+  status: string,
+): Promise<any> => {
+  const response = await axiosInstance.put(`/applications/${id}/status`, {
+    status,
+  });
   return response.data;
 };
 
 /**
  * Get Applications Statistics (HR & Admin only)
  */
-export const getApplicationStatistics = async (job_id?: string): Promise<ApplicationStatisticsResponse> => {
-  const response = await axiosInstance.get<ApplicationStatisticsResponse>('/applications/statistics', {
-    params: { job_id },
-  });
+export const getApplicationStatistics = async (
+  job_id?: string,
+): Promise<ApplicationStatisticsResponse> => {
+  const response = await axiosInstance.get<ApplicationStatisticsResponse>(
+    "/applications/statistics",
+    {
+      params: { job_id },
+    },
+  );
   return response.data;
 };
 
 /**
  * Download Application Document (HR & Admin only)
  */
-export const downloadDocument = async (applicationId: string, documentId: number): Promise<Blob> => {
-  const response = await axiosInstance.get(`/applications/${applicationId}/documents/${documentId}/download`, {
-    responseType: 'blob',
-  });
+export const downloadDocument = async (
+  applicationId: string,
+  documentId: number,
+): Promise<Blob> => {
+  const response = await axiosInstance.get(
+    `/applications/${applicationId}/documents/${documentId}/download`,
+    {
+      responseType: "blob",
+    },
+  );
   return response.data;
 };
 
