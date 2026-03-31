@@ -6,11 +6,13 @@ import {
   Search,
   X
 } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
 import { positionAuditService, vacancyService, type PosAdtGrpDt, type PosAdtGrpHd, type Vacancy } from "../lib/api/vacancies";
+
+const ApplyJobModal = lazy(() => import("../components/ApplyJobModal").then(m => ({ default: m.ApplyJobModal })));
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,13 +46,13 @@ interface PaginationState {
   total: number;
 }
 
-const CareerPage: React.FC = () => {
+const TestingDevelopment: React.FC = () => {
   const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [pagination, setPagination] = useState<PaginationState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
-  const [applyDevelopmentVacancy, setApplyDevelopmentVacancy] = useState<Vacancy | null>(null);
+  const [applyingVacancy, setApplyingVacancy] = useState<Vacancy | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(9);
@@ -235,18 +237,21 @@ const CareerPage: React.FC = () => {
         <JobModal
           vacancy={selectedVacancy}
           onClose={() => setSelectedVacancy(null)}
-          onApply={(v) => {
-            setSelectedVacancy(null);
-            setApplyDevelopmentVacancy(v);
-          }}
+          onApply={(v) => { setSelectedVacancy(null); setApplyingVacancy(v); }}
         />
       )}
 
-      {applyDevelopmentVacancy && (
-        <DevelopmentNoticeModal
-          vacancy={applyDevelopmentVacancy}
-          onClose={() => setApplyDevelopmentVacancy(null)}
-        />
+      {applyingVacancy && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        }>
+          <ApplyJobModal
+            vacancy={applyingVacancy}
+            onClose={() => setApplyingVacancy(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -255,9 +260,9 @@ const CareerPage: React.FC = () => {
 // --- Sub-Components ---
 
 const HeroBanner = () => (
-  <div className="relative h-87.5 w-full overflow-hidden">
+  <div className="relative h-[350px] w-full overflow-hidden">
     <img src={HeroImg} alt="Office" className="w-full h-full object-cover" width={1200} height={350} fetchPriority="high" decoding="async" />
-    <div className="absolute inset-0 bg-linear-to-t from-slate-900/90 via-slate-900/40 to-slate-900/40 flex items-end">
+    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/40 to-slate-900/40 flex items-end">
       <div className="max-w-6xl mx-auto px-6 pb-16 w-full text-white text-center md:text-left relative z-10">
         <h1 className="text-4xl md:text-5xl font-bold mb-2">
           Build Your Future
@@ -296,7 +301,7 @@ const FilterBar = ({
       </div>
       <div className="flex-1 flex items-center px-4 py-1 md:py-0">
         <Select value={selectedCategoryId ? selectedCategoryId.toString() : "all"} onValueChange={onCategoryChange}>
-          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-placeholder:text-slate-400 text-sm md:text-base">
+          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-[placeholder]:text-slate-400 text-sm md:text-base">
             <SelectValue placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"} />
           </SelectTrigger>
           <SelectContent className="font-medium text-slate-700">
@@ -309,7 +314,7 @@ const FilterBar = ({
       </div>
       <div className="flex-1 flex items-center px-4 py-1 md:py-0">
         <Select value={selectedOptionId ? selectedOptionId.toString() : "all"} onValueChange={onOptionChange} disabled={!selectedCategoryId}>
-          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-placeholder:text-slate-400 text-sm md:text-base">
+          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-[placeholder]:text-slate-400 text-sm md:text-base">
             <SelectValue placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"} />
           </SelectTrigger>
           <SelectContent className="font-medium text-slate-700">
@@ -324,7 +329,7 @@ const FilterBar = ({
         <Button
           type="button"
           onClick={onSearchSubmit}
-          className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-linear-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
+          className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
         >
           Search
         </Button>
@@ -484,7 +489,7 @@ const PaginationNav = ({
             {p}
           </Button>
         ) : (
-          <span key={i} className="text-slate-400 font-bold shrink-0 px-1 sm:px-2 min-w-4 text-center text-sm">...</span>
+          <span key={i} className="text-slate-400 font-bold shrink-0 px-1 sm:px-2 min-w-[16px] text-center text-sm">...</span>
         )
       )}
 
@@ -521,40 +526,8 @@ const SkeletonLoader = () => (
   </div>
 );
 
-const DevelopmentNoticeModal = ({
-  vacancy,
-  onClose,
-}: {
-  vacancy: Vacancy;
-  onClose: () => void;
-}) => (
-  <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
-    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95">
-      <div className="bg-amber-50 border-b border-amber-100 px-6 py-5">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-600">Pemberitahuan</p>
-        <h3 className="mt-2 text-2xl font-bold text-slate-900">Fitur Apply Job Masih Development</h3>
-      </div>
-
-      <div className="px-6 py-5 space-y-3">
-        <p className="text-sm leading-relaxed text-slate-600">
-          Fitur apply job untuk lowongan <span className="font-semibold text-slate-900">{vacancy.VacantPositionName}</span> saat ini masih dalam proses development.
-        </p>
-        <p className="text-sm leading-relaxed text-slate-600">
-          Silakan coba kembali nanti. Untuk sementara, informasi lowongan masih dapat dilihat seperti biasa.
-        </p>
-      </div>
-
-      <div className="px-6 pb-6 flex justify-end">
-        <Button onClick={onClose} className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800 px-6">
-          Mengerti
-        </Button>
-      </div>
-    </div>
-  </div>
-);
-
 const JobModal = ({ vacancy, onClose, onApply }: { vacancy: Vacancy; onClose: () => void; onApply: (v: Vacancy) => void }) => (
-  <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+  <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
     <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
       <div className="bg-primary p-8 relative shrink-0">
         <button
@@ -597,7 +570,7 @@ const JobModal = ({ vacancy, onClose, onApply }: { vacancy: Vacancy; onClose: ()
         >
           Tutup
         </Button>
-        <Button onClick={() => onApply(vacancy)} className="flex-2 h-12 bg-primary text-primary-foreground rounded-xl font-semibold shadow-lg hover:bg-primary/90 transition-all">
+        <Button onClick={() => onApply(vacancy)} className="flex-[2] h-12 bg-primary text-primary-foreground rounded-xl font-semibold shadow-lg hover:bg-primary/90 transition-all">
           Lamar Sekarang
         </Button>
       </div>
@@ -605,4 +578,4 @@ const JobModal = ({ vacancy, onClose, onApply }: { vacancy: Vacancy; onClose: ()
   </div>
 );
 
-export default CareerPage;
+export default TestingDevelopment;

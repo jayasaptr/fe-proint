@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, Lock, User } from "lucide-react";
+import { ArrowRight, Lock, User, Eye, EyeOff } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
-import api from "../lib/axios";
+import axios from "axios";
 
 const slides = [
   {
@@ -27,9 +27,11 @@ const LoginPage: React.FC = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const loginBaseUrl = import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -49,9 +51,15 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await api.post("/auth/login", { username, password });
+      const response = await axios.post(`${loginBaseUrl}/login`, { username, password });
 
-      const { token, user } = response.data;
+      const loginResult = response.data;
+      if (!loginResult?.success || !loginResult?.data?.access_token || !loginResult?.data?.user) {
+        throw new Error(loginResult?.message || "Format response login tidak valid");
+      }
+
+      const token = loginResult.data.access_token;
+      const user = loginResult.data.user;
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
 
@@ -98,14 +106,14 @@ const LoginPage: React.FC = () => {
             )}
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-slate-900">NIK</Label>
+                <Label htmlFor="username" className="text-slate-900">Username</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
                   <Input
                     id="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="NIK"
+                    placeholder="Enter your username"
                     type="text"
                     autoCapitalize="none"
                     autoComplete="username"
@@ -130,10 +138,17 @@ const LoginPage: React.FC = () => {
                     id="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
-                    className="pl-10 h-12 rounded-xl bg-white text-slate-900 border-slate-200 focus-visible:ring-primary focus-visible:ring-opacity-50"
+                    className="pl-10 pr-10 h-12 rounded-xl bg-white text-slate-900 border-slate-200 focus-visible:ring-primary focus-visible:ring-opacity-50"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+                  </button>
                 </div>
               </div>
             </div>

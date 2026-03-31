@@ -72,6 +72,7 @@ export interface Application {
   submitted_at: string;
   created_at: string;
   updated_at: string;
+  status_apply?: string | null;
   job?: Job;
   identities?: Identity[];
   educations?: Education[];
@@ -151,7 +152,8 @@ export interface ApplicationStatisticsResponse {
  * Submit a new application (Public)
  */
 export const submitApplication = async (formData: FormData): Promise<SubmitApplicationResponse> => {
-  const response = await axiosInstance.post<SubmitApplicationResponse>('/candidates/apply', formData, {
+  const baseUrl = import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
+  const response = await axiosInstance.post<SubmitApplicationResponse>(baseUrl+'/candidates/apply-job', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },

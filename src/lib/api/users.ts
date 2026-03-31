@@ -58,6 +58,11 @@ export const getCurrentUser = async (): Promise<ApiResponse<User>> => {
   return response.data;
 };
 
+export const logoutUser = async (): Promise<ApiResponse<void>> => {
+  const response = await api.post('/logout');
+  return response.data;
+};
+
 export const getUsers = async (params?: { role?: string; name?: string; page?: number; per_page?: number }): Promise<ApiResponse<User[]>> => {
   const response = await api.get('/auth/users', { params });
   return response.data;

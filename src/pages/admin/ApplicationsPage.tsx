@@ -370,6 +370,7 @@ export default function ApplicationsPage() {
                   Contact
                 </th>
                 <th className="px-6 py-4 font-medium tracking-wider whitespace-nowrap">Status</th>
+                <th className="px-6 py-4 font-medium tracking-wider whitespace-nowrap">Source</th>
                 <th className="px-6 py-4 font-medium tracking-wider whitespace-nowrap">
                   Applied Date
                 </th>
@@ -382,7 +383,7 @@ export default function ApplicationsPage() {
               {isLoading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-6 py-8 text-center text-slate-500"
                   >
                     Loading applications...
@@ -391,7 +392,7 @@ export default function ApplicationsPage() {
               ) : currentApplications.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-6 py-8 text-center text-slate-500"
                   >
                     No applications found.
@@ -430,6 +431,11 @@ export default function ApplicationsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(app.status)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                       <span className="px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-800 rounded-full dark:bg-slate-800 dark:text-slate-300 capitalize">
+                         {app.status_apply || "local"}
+                       </span>
+                    </td>
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300 text-sm whitespace-nowrap">
                       {new Date(app.created_at).toLocaleDateString(undefined, {
                         year: "numeric",

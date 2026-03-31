@@ -30,7 +30,8 @@ import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { exportApplications } from '../../lib/api/applications';
 import type { Job } from '../../lib/api/jobs';
-import { createJob, deleteJob, getJobs, updateJob } from '../../lib/api/jobs';
+import { createJob, deleteJob, updateJob } from '../../lib/api/jobs';
+import { vacancyService, type Vacancy } from '../../lib/api/vacancies';
 
 const JobsPage: React.FC = () => {
   const { currentUser } = useOutletContext<{ currentUser: User }>();
@@ -48,24 +49,72 @@ const JobsPage: React.FC = () => {
   const [locationFilter, setLocationFilter] = useState('all');
   const [siteFilter, setSiteFilter] = useState('all');
 
+  const mapVacancyStatus = (vacancy: Vacancy): Job['status'] => {
+    if (vacancy.FgActive === 'Y' && vacancy.FgShowVacant === 'Y') return 'Open';
+    if (vacancy.FgActive === 'N') return 'Closed';
+    return 'Draft';
+  };
+
+  const findGroupName = (vacancy: Vacancy, keyword: string): string => {
+    const lowerKeyword = keyword.toLowerCase();
+    const group = vacancy.PosAdtGroups?.find((item) => item.PosAdtName?.toLowerCase().includes(lowerKeyword));
+    return group?.PosAdtGrpName || '-';
+  };
+
+  const mapVacancyToJob = (vacancy: Vacancy): Job => ({
+    id: String(vacancy.VacantPosId),
+    title: vacancy.VacantPositionName,
+    level: findGroupName(vacancy, 'level'),
+    location: findGroupName(vacancy, 'location'),
+    site: findGroupName(vacancy, 'site'),
+    description: vacancy.VacantNote || '',
+    requirements: vacancy.VacantPosSpec || '',
+    start_date: null,
+    end_date: vacancy.VacantExpDate || null,
+    status: mapVacancyStatus(vacancy),
+    created_at: vacancy.UpdDate,
+    updated_at: vacancy.UpdDate,
+  });
+
   const fetchJobs = async () => {
     setLoading(true);
     try {
-      const filters: any = { page, per_page: perPage };
-      if (debouncedSearchTerm) filters.title = debouncedSearchTerm;
-      if (statusFilter !== 'all') filters.status = statusFilter;
-      if (locationFilter && locationFilter !== 'all') filters.location = locationFilter;
-      if (siteFilter && siteFilter !== 'all') filters.site = siteFilter;
+      const response = await vacancyService.getVacancies({
+        page: 1,
+        per_page: 500,
+        search: debouncedSearchTerm || undefined,
+        include_relations: true,
+      });
 
-      const response = await getJobs(filters);
-      setJobs(response.data);
-      setTotalPages(response.pagination.total_pages);
+      const mappedJobs = response.data.map(mapVacancyToJob);
+      const filteredJobs = mappedJobs.filter((job) => {
+        const matchStatus = statusFilter === 'all' ? true : job.status === statusFilter;
+        const matchLocation = locationFilter === 'all' ? true : job.location === locationFilter;
+        const matchSite = siteFilter === 'all' ? true : job.site === siteFilter;
+        return matchStatus && matchLocation && matchSite;
+      });
+
+      const calculatedTotalPages = Math.max(1, Math.ceil(filteredJobs.length / perPage));
+      const currentPage = Math.min(page, calculatedTotalPages);
+      const startIndex = (currentPage - 1) * perPage;
+      const paginatedJobs = filteredJobs.slice(startIndex, startIndex + perPage);
+
+      setJobs(paginatedJobs);
+      setTotalPages(calculatedTotalPages);
+
+      if (page !== currentPage) {
+        setPage(currentPage);
+      }
     } catch (err: any) {
       console.error(err.response?.data?.message || err.message || 'Failed to fetch jobs');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchTerm, statusFilter, locationFilter, siteFilter]);
 
   useEffect(() => {
     fetchJobs();
