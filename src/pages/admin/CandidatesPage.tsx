@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { useDebounce } from '@/hooks/useDebounce';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { getCandidates, type Candidate, postApplyToSqlServer } from '@/lib/api/candidates';
-import { Eye, Search, Users, User, Activity, Filter, Download, Mail, Phone, Award, BriefcaseBusiness, Check } from 'lucide-react';
+import { Eye, Search, Users, User, Activity, Filter, Download, Mail, Phone, Award, BriefcaseBusiness } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -256,12 +256,8 @@ const CandidatesPage: React.FC = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          className={`h-9 px-4 rounded-xl font-medium shadow-sm transition-all border ${
-                            candidate.status_apply?.toLowerCase().includes('sql')
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800/40 dark:text-emerald-400 cursor-default opacity-100"
-                              : "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-slate-700"
-                          }`}
-                          disabled={!!loadingApply[candidate.CanId] || (candidate.status_apply?.toLowerCase() === 'applied')}
+                          className="h-9 px-4 rounded-xl font-medium border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-slate-700 shadow-sm transition-all"
+                          disabled={!!loadingApply[candidate.CanId]}
                           onClick={async () => {
                             setLoadingApply((prev) => ({ ...prev, [candidate.CanId]: true }));
                             try {
@@ -280,9 +276,7 @@ const CandidatesPage: React.FC = () => {
                           }}
                         >
                           {loadingApply[candidate.CanId] ? (
-                            <span className="flex items-center"><span className="animate-spin mr-2 w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full"></span>Loading...</span>
-                          ) : candidate.status_apply?.toLowerCase() === 'applied' ? (
-                            <><Check className="w-4 h-4 mr-2" /> Synced to SQL Server</>
+                            <span className="flex items-center"><span className="animate-spin mr-2 w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full"></span>Loading...</span>
                           ) : (
                             <><Download className="w-4 h-4 mr-2" /> Apply ke SQL Server</>
                           )}
