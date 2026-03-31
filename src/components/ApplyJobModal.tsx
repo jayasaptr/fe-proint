@@ -88,6 +88,7 @@ export const ApplyJobModal = ({
 
     // Declaration
     is_declared_true: false,
+    status_apply: "local",
   });
 
   const [questionGroups, setQuestionGroups] = useState<QuestionGroup[]>([]);

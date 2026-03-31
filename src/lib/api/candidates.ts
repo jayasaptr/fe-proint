@@ -323,6 +323,7 @@ export interface Candidate {
   UpdDate?: string | null;
   UpdUser?: string | null;
   UpdFlag?: string | null;
+  status_apply?: string | null;
   addresses?: CandidateAddress[];
   education?: CandidateEducation[];
   experiences?: CandidateExperience[];

@@ -72,6 +72,7 @@ export interface Application {
   submitted_at: string;
   created_at: string;
   updated_at: string;
+  status_apply?: string | null;
   job?: Job;
   identities?: Identity[];
   educations?: Education[];
