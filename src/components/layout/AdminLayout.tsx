@@ -6,7 +6,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { getCurrentUser } from '@/lib/api/users';
+import { getCurrentUser, logoutUser } from '@/lib/api/users';
 import { cn } from '@/lib/utils';
 import {
   Bell,
@@ -104,9 +104,16 @@ const AdminLayout: React.FC = () => {
     fetchUser();
   }, [navigate]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (error) {
+      console.error('Failed to logout on server', error);
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      navigate('/login');
+    }
   };
 
   return (
