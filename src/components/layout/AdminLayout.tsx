@@ -36,9 +36,9 @@ const sidebarGroups = [
   {
     title: 'RECRUITMENT',
     links: [
-      { name: 'Jobs', href: '/admin/jobs', icon: List },
+    
       { name: 'Candidates', href: '/admin/candidates', icon: UserCircle },
-      { name: 'Applications', href: '/admin/applications', icon: FileText },
+
     ]
   },
   {
@@ -55,7 +55,7 @@ const AdminLayout: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' ||
-             (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
     }
     return false;
   });
@@ -135,14 +135,14 @@ const AdminLayout: React.FC = () => {
         )}
       >
         <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-orange-500/5 dark:from-orange-500/10 to-transparent pointer-events-none" />
-        
+
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100/50 dark:border-slate-800/50 shrink-0 relative z-10">
           <Link to="/admin" className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center px-0")}>
-             <div className="bg-white dark:bg-slate-800 rounded-xl p-1 flex items-center justify-center w-8 h-8 border border-slate-200/50 dark:border-slate-700/50 shadow-sm shrink-0">
-                <img src={DHImg} alt="DH Logo" className="w-full h-full object-contain" />
-             </div>
-             {!sidebarCollapsed && <span className="font-bold text-[17px] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">E-Recruitment</span>}
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-1 flex items-center justify-center w-8 h-8 border border-slate-200/50 dark:border-slate-700/50 shadow-sm shrink-0">
+              <img src={DHImg} alt="DH Logo" className="w-full h-full object-contain" />
+            </div>
+            {!sidebarCollapsed && <span className="font-bold text-[17px] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">E-Recruitment</span>}
           </Link>
           <button
             className="md:hidden text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-50 dark:bg-slate-800 p-1.5 rounded-lg"
@@ -155,57 +155,57 @@ const AdminLayout: React.FC = () => {
         {/* Sidebar Navigation */}
         <nav className="flex-1 overflow-y-auto py-8 px-4 space-y-8 relative z-10">
           {sidebarGroups
-            .filter(group => group.title !== 'SYSTEM' || (currentUser?.roles?.includes('Admin') && !currentUser?.roles?.some((r: string) => r.toLowerCase() === 'hr')))
+            .filter(group => group.title !== 'SYSTEM' || currentUser?.is_admin)
             .map((group, groupIdx) => (
-            <div key={groupIdx} className="space-y-2">
-              {!sidebarCollapsed && (
-                <h3 className="px-3 text-[10px] font-medium text-slate-400/80 uppercase tracking-widest mb-3 flex items-center gap-4">
-                  {group.title}
-                  <div className="h-px bg-slate-200/50 dark:bg-slate-800/50 flex-1"></div>
-                </h3>
-              )}
-              <ul className="space-y-1.5">
-                {group.links.map((link) => {
-                  const Icon = link.icon;
-                  const isActive = link.href === '/admin'
-                    ? location.pathname === '/admin'
-                    : location.pathname.startsWith(link.href);
+              <div key={groupIdx} className="space-y-2">
+                {!sidebarCollapsed && (
+                  <h3 className="px-3 text-[10px] font-medium text-slate-400/80 uppercase tracking-widest mb-3 flex items-center gap-4">
+                    {group.title}
+                    <div className="h-px bg-slate-200/50 dark:bg-slate-800/50 flex-1"></div>
+                  </h3>
+                )}
+                <ul className="space-y-1.5">
+                  {group.links.map((link) => {
+                    const Icon = link.icon;
+                    const isActive = link.href === '/admin'
+                      ? location.pathname === '/admin'
+                      : location.pathname.startsWith(link.href);
 
-                  return (
-                    <li key={link.name}>
-                      <Link
-                        to={link.href}
-                        className={cn(
-                          "relative flex items-center gap-3 py-2.5 rounded-xl text-[13px] transition-all group overflow-hidden",
-                          sidebarCollapsed ? "px-0 justify-center" : "px-3",
-                          isActive
-                            ? "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium shadow-sm shadow-orange-500/5 border border-orange-200/50 dark:border-orange-500/20"
-                            : "text-slate-500 dark:text-slate-400 font-normal hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-700 dark:hover:text-slate-200 border border-transparent"
-                        )}
-                        title={sidebarCollapsed ? link.name : undefined}
-                      >
-                        {isActive && (
-                          <div className="absolute left-0 top-1 bottom-1 w-1 bg-orange-500 rounded-r-md" />
-                        )}
-                        <Icon size={16} className={cn(
-                          "transition-transform duration-300 shrink-0",
-                          isActive ? "text-orange-600 dark:text-orange-400 scale-110" : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-slate-300"
-                        )} />
-                        {!sidebarCollapsed && <span>{link.name}</span>}
-                        
-                        {/* Notification Badge Example */}
-                        {!sidebarCollapsed && (link.name === 'Applications' || link.name === 'Candidates') && !isActive && (
-                           <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-                        )}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                    return (
+                      <li key={link.name}>
+                        <Link
+                          to={link.href}
+                          className={cn(
+                            "relative flex items-center gap-3 py-2.5 rounded-xl text-[13px] transition-all group overflow-hidden",
+                            sidebarCollapsed ? "px-0 justify-center" : "px-3",
+                            isActive
+                              ? "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium shadow-sm shadow-orange-500/5 border border-orange-200/50 dark:border-orange-500/20"
+                              : "text-slate-500 dark:text-slate-400 font-normal hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-700 dark:hover:text-slate-200 border border-transparent"
+                          )}
+                          title={sidebarCollapsed ? link.name : undefined}
+                        >
+                          {isActive && (
+                            <div className="absolute left-0 top-1 bottom-1 w-1 bg-orange-500 rounded-r-md" />
+                          )}
+                          <Icon size={16} className={cn(
+                            "transition-transform duration-300 shrink-0",
+                            isActive ? "text-orange-600 dark:text-orange-400 scale-110" : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-slate-300"
+                          )} />
+                          {!sidebarCollapsed && <span>{link.name}</span>}
+
+                          {/* Notification Badge Example */}
+                          {!sidebarCollapsed && (link.name === 'Applications' || link.name === 'Candidates') && !isActive && (
+                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
         </nav>
-        
+
         {/* Bottom User Card */}
         {!sidebarCollapsed && (
           <div className="p-4 m-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative z-10 group cursor-pointer hover:border-orange-300 dark:hover:border-orange-500/50 transition-colors">
@@ -213,8 +213,13 @@ const AdminLayout: React.FC = () => {
               <div className="w-9 h-9 rounded-[10px] bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold text-sm shrink-0 transition-colors group-hover:bg-orange-500 group-hover:text-white">
                 {currentUser?.name?.charAt(0) || 'U'}
               </div>
-              <div className="overflow-hidden">
-                <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">{currentUser?.name || 'Administrator'}</p>
+              <div className="overflow-hidden flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">{currentUser?.name || 'Administrator'}</p>
+                  {currentUser?.is_admin && (
+                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400 text-[9px] font-bold uppercase tracking-wider border border-orange-200 dark:border-orange-500/20">Admin</span>
+                  )}
+                </div>
                 <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">{currentUser?.email || 'admin@ptdh.co.id'}</p>
               </div>
             </div>
@@ -259,9 +264,24 @@ const AdminLayout: React.FC = () => {
                   <div className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-700 flex items-center justify-center text-white font-bold text-sm">
                     {currentUser?.name?.charAt(0) || 'U'}
                   </div>
-                  <div className="hidden sm:block">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-tight">{currentUser?.name || 'Loading...'}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{currentUser?.email || 'Administrator'}</p>
+                  <div className="hidden sm:flex sm:flex-col sm:items-start">
+                    <div className="flex gap-2 items-start">
+                      <div className="col">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-tight">{currentUser?.name || 'Loading...'}</p>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{currentUser?.email || 'Administrator'}</p>
+
+                      </div>
+                      <div className="col">
+                        {currentUser?.is_admin && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400">
+                            Admin
+                          </span>
+                        )}
+                      </div>
+
+                    </div>
                   </div>
                   <ChevronDown size={16} className="text-slate-400 hidden sm:block ml-1" />
                 </button>
