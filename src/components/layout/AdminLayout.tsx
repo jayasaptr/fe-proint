@@ -12,7 +12,6 @@ import {
   Bell,
   ChevronDown,
   Compass,
-  FileText,
   LogOut,
   Menu,
   Moon,
