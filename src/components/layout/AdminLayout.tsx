@@ -13,7 +13,6 @@ import {
   ChevronDown,
   Compass,
   FileText,
-  List,
   LogOut,
   Menu,
   Moon,
