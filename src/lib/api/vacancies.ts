@@ -87,17 +87,18 @@ export interface VacancyFilters {
 
 export const positionAuditService = {
   getCategories: async (): Promise<ApiResponse<PosAdtGrpHd[]>> => {
-    const response = await api.get('/posadtgrphd');
+    const response = await api.get('/posadtgrphd', { baseURL: import.meta.env.VITE_API_URL });
     return response.data;
   },
 
   getCategoryById: async (id: number): Promise<ApiResponse<PosAdtGrpHd>> => {
-    const response = await api.get(`/posadtgrphd/${id}`);
+    const response = await api.get(`/posadtgrphd/${id}`, { baseURL: import.meta.env.VITE_API_URL });
     return response.data;
   },
 
   getOptionsByCategory: async (categoryId: number, includeHeader = false): Promise<PaginatedResponse<PosAdtGrpDt>> => {
     const response = await api.get('/posadtgrpdt', {
+      baseURL: import.meta.env.VITE_API_URL,
       params: {
         posadt_type_id: categoryId,
         include_header: includeHeader,
@@ -108,6 +109,7 @@ export const positionAuditService = {
 
   getOptionById: async (id: number, includeHeader = false): Promise<ApiResponse<PosAdtGrpDt>> => {
     const response = await api.get(`/posadtgrpdt/${id}`, {
+      baseURL: import.meta.env.VITE_API_URL,
       params: { include_header: includeHeader },
     });
     return response.data;
@@ -116,12 +118,16 @@ export const positionAuditService = {
 
 export const vacancyService = {
   getVacancies: async (filters: VacancyFilters = {}): Promise<PaginatedResponse<Vacancy>> => {
-    const response = await api.get('/vacancies', { params: filters });
+    const response = await api.get('/vacancies', { 
+      baseURL: import.meta.env.VITE_API_URL,
+      params: filters 
+    });
     return response.data;
   },
 
   getVacancyById: async (id: number, includeRelations = true): Promise<ApiResponse<Vacancy>> => {
     const response = await api.get(`/vacancies/${id}`, {
+      baseURL: import.meta.env.VITE_API_URL,
       params: { include_relations: includeRelations },
     });
     return response.data;
