@@ -112,9 +112,6 @@ const CandidatesPage: React.FC = () => {
             <Button variant="outline" className="h-11 px-4 rounded-xl border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 sm:flex flex-1 sm:flex-none font-medium shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800">
               <Filter className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Filters</span>
             </Button>
-            <Button className="h-11 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-orange-500 dark:hover:bg-orange-600 dark:text-white font-medium border-0 shadow-lg shadow-slate-900/10 dark:shadow-orange-500/20 sm:flex flex-1 sm:flex-none">
-              <Download className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Export</span>
-            </Button>
           </div>
         </div>
       </div>

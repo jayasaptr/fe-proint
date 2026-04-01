@@ -6,6 +6,7 @@ export interface User {
   name: string;
   roles: string[];
   must_change_password?: boolean;
+  is_admin?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -100,6 +101,42 @@ export const getRoles = async (): Promise<ApiResponse<Role[]>> => {
 
 export const changePassword = async (data: ChangePasswordRequest): Promise<ApiResponse<void>> => {
   const response = await api.post('/auth/change-password', data);
+  return response.data;
+};
+
+// --- New /admin/users Endpoints ---
+
+export interface AdminUser {
+  id: number;
+  jde: string;
+  name?: string;
+  is_admin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const getAdminUsers = async (): Promise<AdminUser[]> => {
+  const response = await api.get('/admin/users');
+  return response.data.data || response.data;
+};
+
+export const createAdminUser = async (data: { jde: string; name?: string; is_admin: boolean; password?: string }): Promise<any> => {
+  const response = await api.post('/admin/users/store', data);
+  return response.data;
+};
+
+export const updateAdminUser = async (jde: string, data: { jde: string; name?: string; password?: string }): Promise<any> => {
+  const response = await api.put(`/admin/users/${jde}`, data);
+  return response.data;
+};
+
+export const deleteAdminUser = async (jde: string): Promise<any> => {
+  const response = await api.delete(`/admin/users/${jde}`);
+  return response.data;
+};
+
+export const setAdminUser = async (jde: string, data: { is_admin: boolean }): Promise<any> => {
+  const response = await api.post(`/admin/users/${jde}/set-admin`, data);
   return response.data;
 };
 

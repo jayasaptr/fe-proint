@@ -1,4 +1,14 @@
 import { TablePagination } from '@/components/TablePagination';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -8,244 +18,176 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { assignRole, deleteUser, getCurrentUser, getRoles, getUsers, registerUser, removeRole, updateUser, type Role, type User } from '@/lib/api/users';
+import { Switch } from '@/components/ui/switch';
+import { 
+  getAdminUsers, 
+  createAdminUser, 
+  updateAdminUser,
+  deleteAdminUser,
+  setAdminUser,
+  type AdminUser 
+} from '@/lib/api/users';
 import { format } from 'date-fns';
-import { AlertTriangle, Edit, Loader2, MoreHorizontal, PlusCircle, Search, Shield, Trash2 } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { AlertTriangle, Edit, Loader2, PlusCircle, Trash2, Search } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const UsersPage: React.FC = () => {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [roles, setRoles] = useState<Role[]>([]);
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const navigate = useNavigate();
 
-  // Pagination & Filters
+  // Search & Pagination
+  const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const perPage = 10;
-  const [totalPages, setTotalPages] = useState(1);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
 
-  // Add User State
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [addLoading, setAddLoading] = useState(false);
-  const [addForm, setAddForm] = useState({
-    name: '',
-    username: '',
-    password: '',
-    roleId: ''
-  });
-  const [addError, setAddError] = useState('');
+  // Modals
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
+  
+  // Forms
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState('');
+  
+  const [addForm, setAddForm] = useState({ jde: '', name: '' });
+  const [editForm, setEditForm] = useState({ originalJde: '', jde: '', name: '' });
 
-  // Edit User State
-  const [isEditUserOpen, setIsEditUserOpen] = useState(false);
-  const [editLoading, setEditLoading] = useState(false);
-  const [editingUserId, setEditingUserId] = useState('');
-  const [editForm, setEditForm] = useState({
-    name: '',
-    username: '',
-    password: ''
-  });
-  const [editError, setEditError] = useState('');
-
-  // Roles State
-  const [isRolesOpen, setIsRolesOpen] = useState(false);
-  const [rolesLoading, setRolesLoading] = useState(false);
-  const [managingUser, setManagingUser] = useState<User | null>(null);
-  const [rolesError, setRolesError] = useState('');
+  const context = useOutletContext<{ currentUser: any }>();
+  const currentUser = context?.currentUser;
 
   useEffect(() => {
-    const initPage = async () => {
-      try {
-        const userRes = await getCurrentUser();
-        const isAdmin = userRes.data?.roles?.includes('Admin');
-        const isHR = userRes.data?.roles?.some((r: string) => r.toLowerCase() === 'hr');
-
-        if (userRes.success && userRes.data && isAdmin && !isHR) {
-          setIsAuthorized(true);
-          fetchRolesList();
-        } else {
-          setIsAuthorized(false);
-          setLoading(false);
-        }
-      } catch (error) {
+    if (currentUser !== null && currentUser !== undefined) {
+      if (currentUser?.is_admin) {
+        setIsAuthorized(true);
+        fetchUsers();
+      } else {
         setIsAuthorized(false);
         setLoading(false);
       }
-    };
-    initPage();
-  }, []);
+    }
+  }, [currentUser]);
 
-  const fetchUsersList = async () => {
+  const fetchUsers = async () => {
     try {
       setLoading(true);
-      const params: { role?: string; name?: string; page?: number; per_page?: number } = { page, per_page: perPage };
-      if (searchTerm) params.name = searchTerm;
-      if (roleFilter !== 'all') params.role = roleFilter;
-
-      const res = await getUsers(params);
-      if (res.success && res.data) {
-        setUsers(res.data);
-        if (res.pagination) {
-          setTotalPages(res.pagination.total_pages);
-        }
-      }
+      const data = await getAdminUsers();
+      // data might be array directly based on our implementation
+      setUsers(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch users', error);
+      toast.error('Gagal mengambil data user');
     } finally {
       setLoading(false);
     }
   };
 
-  // Reset page when search or role filter changes
-  useEffect(() => {
-    setPage(1);
-  }, [searchTerm, roleFilter]);
+  const filteredUsers = useMemo(() => {
+    if (!searchTerm) return users;
+    return users.filter(u => u.jde?.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [users, searchTerm]);
 
-  useEffect(() => {
-    if (isAuthorized) {
-      const timer = setTimeout(() => {
-        fetchUsersList();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [page, searchTerm, roleFilter, isAuthorized]);
+  const totalPages = Math.ceil(filteredUsers.length / perPage) || 1;
+  const paginatedUsers = filteredUsers.slice((page - 1) * perPage, page * perPage);
 
-  const fetchRolesList = async () => {
-    try {
-      const res = await getRoles();
-      if (res.success && res.data) {
-        setRoles(res.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch roles', error);
-    }
-  };
-
-  useEffect(() => {
-    if (roles.length > 0 && !addForm.roleId) {
-      setAddForm(prev => ({ ...prev, roleId: roles[0].id }));
-    }
-  }, [roles]);
-
-  const handleAddUser = async (e: React.FormEvent) => {
+  // Add Item
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setAddError('');
-    if (!addForm.name || !addForm.username || !addForm.password) {
-      setAddError('Please fill in all required fields.');
+    setFormError('');
+    if (!addForm.jde) {
+      setFormError('JDE wajib diisi');
       return;
     }
 
     try {
-      setAddLoading(true);
-      const role_ids = [addForm.roleId];
-
-      const res = await registerUser({
+      setFormLoading(true);
+      await createAdminUser({
+        jde: addForm.jde,
         name: addForm.name,
-        username: addForm.username,
-        password: addForm.password,
-        role_ids
+        is_admin: false
       });
-
-      if (res.success) {
-        setIsAddUserOpen(false);
-        setAddForm({ name: '', username: '', password: '', roleId: roles.length > 0 ? roles[0].id : '' });
-        fetchUsersList(); // Refresh list
-      } else {
-        setAddError(res.message || 'Failed to register user');
-      }
+      toast.success('User berhasil ditambahkan');
+      setIsAddOpen(false);
+      setAddForm({ jde: '', name: '' });
+      fetchUsers();
     } catch (error: any) {
-       setAddError(error.response?.data?.message || 'An error occurred during registration');
+      setFormError(error.response?.data?.message || 'Gagal menambahkan user');
     } finally {
-      setAddLoading(false);
+      setFormLoading(false);
     }
   };
 
-  const openEditModal = (user: User) => {
-    setEditingUserId(user.id);
-    setEditForm({ name: user.name, username: user.username, password: '' });
-    setEditError('');
-    setIsEditUserOpen(true);
+  // Edit Item
+  const openEditModal = (user: AdminUser) => {
+    setEditForm({ 
+      originalJde: user.jde,
+      jde: user.jde,
+      name: user.name || ''
+    });
+    setFormError('');
+    setIsEditOpen(true);
   };
 
-  const handleEditUser = async (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setEditError('');
-
+    setFormError('');
     try {
-      setEditLoading(true);
-      const res = await updateUser(editingUserId, {
-        name: editForm.name,
-        username: editForm.username,
-        ...(editForm.password ? { password: editForm.password } : {})
-      });
-
-      if (res.success) {
-        setIsEditUserOpen(false);
-        fetchUsersList();
-      } else {
-        setEditError(res.message || 'Failed to update user');
-      }
+      setFormLoading(true);
+      const updateData: any = {
+        jde: editForm.jde,
+        name: editForm.name
+      };
+      
+      await updateAdminUser(editForm.originalJde, updateData);
+      toast.success('User berhasil diupdate');
+      setIsEditOpen(false);
+      fetchUsers();
     } catch (error: any) {
-       setEditError(error.response?.data?.message || 'An error occurred during update');
+       setFormError(error.response?.data?.message || 'Gagal mengupdate user');
     } finally {
-      setEditLoading(false);
+      setFormLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      try {
-        await deleteUser(id);
-        fetchUsersList(); // Refresh the list
-      } catch (err: any) {
-        alert(err.response?.data?.message || err.message || 'Failed to delete user');
-      }
+  // Delete Item
+  const confirmDelete = (jde: string) => {
+    setUserToDelete(jde);
+    setIsDeleteOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!userToDelete) return;
+    try {
+      setFormLoading(true);
+      await deleteAdminUser(userToDelete);
+      toast.success(`User ${userToDelete} berhasil dihapus`);
+      setIsDeleteOpen(false);
+      setUserToDelete(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || 'Gagal menghapus user');
+    } finally {
+      setFormLoading(false);
     }
   };
 
-  const openRolesModal = (user: User) => {
-    setManagingUser(user);
-    setRolesError('');
-    setIsRolesOpen(true);
-  };
-
-  const handleToggleRole = async (roleName: string, roleId: string) => {
-    if (!managingUser) return;
-    setRolesError('');
-    setRolesLoading(true);
-
-    const hasRole = managingUser.roles.includes(roleName);
-
+  const handleToggleAdmin = async (user: AdminUser, checked: boolean) => {
+    // Optimistic UI Update: Langsung update state lokal tanpa loading screen
+    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_admin: checked } : u));
+    
     try {
-      let res;
-      if (hasRole) {
-        res = await removeRole(managingUser.id, roleId);
-      } else {
-        res = await assignRole(managingUser.id, roleId);
-      }
-
-      if (res.success && res.data) {
-        setManagingUser(res.data);
-        fetchUsersList(); // Update background list
-      } else {
-        setRolesError(res.message || 'Failed to toggle role');
-      }
+      await setAdminUser(user.jde, { is_admin: checked });
+      toast.success(`Berhasil mengubah status admin untuk ${user.jde}`);
     } catch (error: any) {
-      setRolesError(error.response?.data?.message || 'An error occurred modifying role');
-    } finally {
-      setRolesLoading(false);
+      // Revert back if it fails
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_admin: !checked } : u));
+      toast.error(error.response?.data?.message || 'Gagal mengubah status admin');
     }
   };
 
@@ -268,116 +210,119 @@ const UsersPage: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">User Management</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">View and manage system administrators and HR accounts.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">Admin Users Management</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">View and manage administrator access and credentials.</p>
         </div>
         <Button
-          className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 gap-2 shadow-sm rounded-lg"
-          onClick={() => setIsAddUserOpen(true)}
+          className="bg-slate-900 hover:bg-slate-800 text-white dark:bg-orange-500 dark:hover:bg-orange-600 dark:text-white gap-2 shadow-sm rounded-lg"
+          onClick={() => setIsAddOpen(true)}
         >
            <PlusCircle size={16} />
            Register New User
         </Button>
       </div>
 
-      {/* Table Section */}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-        {/* Toolbar */}
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row gap-4 justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                placeholder="Search users by name..."
-                className="pl-9 h-10 rounded-lg bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus-visible:ring-orange-500"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-full sm:w-[140px] h-10 rounded-lg bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-                <SelectValue placeholder="All Roles" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
-                {roles.map(r => (
-                  <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Search by JDE..."
+              className="pl-9 h-10 rounded-lg bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus-visible:ring-orange-500"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+            />
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 dark:text-slate-400 uppercase bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
               <tr>
+                <th className="px-6 py-4 font-medium tracking-wider w-16 text-center">ID</th>
+                <th className="px-6 py-4 font-medium tracking-wider">JDE</th>
                 <th className="px-6 py-4 font-medium tracking-wider">Name</th>
-                <th className="px-6 py-4 font-medium tracking-wider">NIK</th>
-                <th className="px-6 py-4 font-medium tracking-wider">Roles</th>
-                <th className="px-6 py-4 font-medium tracking-wider w-[150px]">Created At</th>
-                <th className="px-6 py-4 font-medium tracking-wider text-right w-[100px]">Actions</th>
+                <th className="px-6 py-4 font-medium tracking-wider text-center">Status</th>
+                <th className="px-6 py-4 font-medium tracking-wider">Created At</th>
+                <th className="px-6 py-4 font-medium tracking-wider text-right w-[120px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading || isAuthorized === null ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                    Loading users...
+                    <div className="flex justify-center items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Loading data...</div>
                   </td>
                 </tr>
-              ) : users.length === 0 ? (
+              ) : paginatedUsers.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
                     No users found.
                   </td>
                 </tr>
               ) : (
-                users.map((user) => (
+                paginatedUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-slate-900 dark:text-white">{user.name}</div>
+                    <td className="px-6 py-4 text-center font-medium text-slate-600 dark:text-slate-400">
+                      {user.id}
                     </td>
-                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{user.username}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex gap-1.5 flex-wrap">
-                        {user.roles.map((role) => (
-                          <span key={role} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            {role}
-                          </span>
-                        ))}
+                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">
+                      {user.jde}
+                    </td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
+                      {user.name || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex justify-center items-center gap-3">
+                         {user.is_admin ? (
+                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 border border-orange-200/50 dark:border-orange-500/20 w-[75px] justify-center">
+                              Admin
+                           </span>
+                         ) : (
+                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 w-[75px] justify-center">
+                              User
+                           </span>
+                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                      {format(new Date(user.created_at), 'MMM dd, yyyy')}
+                    <td className="px-6 py-4 text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                      {user.created_at ? format(new Date(user.created_at), 'dd MMM yyyy, HH:mm') : '-'}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-                            <span className="sr-only">Open menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openRolesModal(user)} className="cursor-pointer">
-                            <Shield className="mr-2 h-4 w-4 text-slate-400" />
-                            Manage Roles
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openEditModal(user)} className="cursor-pointer">
-                            <Edit className="mr-2 h-4 w-4 text-slate-400" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDelete(user.id)} className="cursor-pointer text-red-600 focus:text-red-600">
-                            <Trash2 className="mr-2 h-4 w-4 text-red-500" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex items-center justify-end gap-3">
+                        <div className="flex items-center gap-2 mr-2">
+                           <Label htmlFor={`switch-${user.id}`} className="text-xs font-medium text-slate-500 dark:text-slate-400 cursor-pointer">Admin Access</Label>
+                           <Switch 
+                             id={`switch-${user.id}`}
+                             checked={user.is_admin}
+                             onCheckedChange={(checked) => handleToggleAdmin(user, checked)}
+                             className="data-[state=checked]:bg-orange-500"
+                           />
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="w-8 h-8 text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-slate-800 dark:hover:text-orange-400 focus:outline-none"
+                          onClick={() => openEditModal(user)}
+                          title="Edit User"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          className="w-8 h-8 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-400 focus:outline-none"
+                          onClick={() => confirmDelete(user.jde)}
+                          title="Delete User"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -386,81 +331,59 @@ const UsersPage: React.FC = () => {
           </table>
         </div>
 
-        <TablePagination
-          currentPage={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
-        />
+        {users.length > 0 && (
+           <TablePagination
+             currentPage={page}
+             totalPages={totalPages}
+             onPageChange={setPage}
+           />
+        )}
       </div>
 
       {/* Add User Dialog */}
-      <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="sm:max-w-[425px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="text-slate-900 dark:text-white">Register New User</DialogTitle>
             <DialogDescription className="text-slate-500 dark:text-slate-400">
-              Create a new HR or Admin account. They can use these credentials to log in.
+              Create a new user access.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleAddUser}>
+          <form onSubmit={handleAddSubmit}>
             <div className="grid gap-4 py-4">
-              {addError && (
+              {formError && (
                 <div className="text-sm font-medium text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-md border border-red-200 dark:border-red-900/50">
-                  {addError}
+                  {formError}
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <Label htmlFor="name" className="text-slate-900 dark:text-slate-300">Full Name</Label>
+                <Label htmlFor="add-name" className="text-slate-900 dark:text-slate-300">Name</Label>
                 <Input
-                  id="name"
+                  id="add-name"
                   placeholder="e.g. John Doe"
-                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
                   value={addForm.name}
                   onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="username" className="text-slate-900 dark:text-slate-300">Username</Label>
+                <Label htmlFor="add-jde" className="text-slate-900 dark:text-slate-300">JDE Number</Label>
                 <Input
-                  id="username"
-                  placeholder="e.g. johndoe"
-                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                  value={addForm.username}
-                  onChange={(e) => setAddForm({ ...addForm, username: e.target.value })}
+                  id="add-jde"
+                  placeholder="e.g. 110362"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                  value={addForm.jde}
+                  onChange={(e) => setAddForm({ ...addForm, jde: e.target.value })}
                 />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="password" className="text-slate-900 dark:text-slate-300">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                  value={addForm.password}
-                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="role" className="text-slate-900 dark:text-slate-300">Initial Role</Label>
-                <select
-                  id="role"
-                  className="flex h-10 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-1 text-base shadow-sm text-slate-900 dark:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-orange-500 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                  value={addForm.roleId}
-                  onChange={(e) => setAddForm({ ...addForm, roleId: e.target.value })}
-                >
-                  {roles.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
               </div>
             </div>
             <DialogFooter className="sm:space-x-2">
-              <Button type="button" variant="outline" onClick={() => setIsAddUserOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+              <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200">
                 Cancel
               </Button>
-              <Button type="submit" disabled={addLoading} className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">
-                {addLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Register User
+              <Button type="submit" disabled={formLoading} className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-orange-500 dark:hover:bg-orange-600">
+                {formLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Save User
               </Button>
             </DialogFooter>
           </form>
@@ -468,57 +391,46 @@ const UsersPage: React.FC = () => {
       </Dialog>
 
       {/* Edit User Dialog */}
-      <Dialog open={isEditUserOpen} onOpenChange={setIsEditUserOpen}>
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="sm:max-w-[425px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="text-slate-900 dark:text-white">Edit User</DialogTitle>
             <DialogDescription className="text-slate-500 dark:text-slate-400">
-              Update name, username, or change password for this account.
+              Update user details and permissions.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleEditUser}>
+          <form onSubmit={handleEditSubmit}>
             <div className="grid gap-4 py-4">
-              {editError && (
+              {formError && (
                 <div className="text-sm font-medium text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-md border border-red-200 dark:border-red-900/50">
-                  {editError}
+                  {formError}
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-name" className="text-slate-900 dark:text-slate-300">Full Name</Label>
+                <Label htmlFor="edit-name" className="text-slate-900 dark:text-slate-300">Name</Label>
                 <Input
                   id="edit-name"
-                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-username" className="text-slate-900 dark:text-slate-300">Username</Label>
+                <Label htmlFor="edit-jde" className="text-slate-900 dark:text-slate-300">JDE Number</Label>
                 <Input
-                  id="edit-username"
-                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                  value={editForm.username}
-                  onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-password" className="text-slate-900 dark:text-slate-300">New Password</Label>
-                <Input
-                  id="edit-password"
-                  type="password"
-                  placeholder="Leave blank to keep unchanged"
-                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600"
-                  value={editForm.password}
-                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  id="edit-jde"
+                  className="bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                  value={editForm.jde}
+                  onChange={(e) => setEditForm({ ...editForm, jde: e.target.value })}
                 />
               </div>
             </div>
             <DialogFooter className="sm:space-x-2">
-              <Button type="button" variant="outline" onClick={() => setIsEditUserOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+              <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200">
                 Cancel
               </Button>
-              <Button type="submit" disabled={editLoading} className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200">
-                {editLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Button type="submit" disabled={formLoading} className="bg-slate-900 text-white hover:bg-slate-800 dark:bg-orange-500 dark:hover:bg-orange-600">
+                {formLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Save Changes
               </Button>
             </DialogFooter>
@@ -526,56 +438,38 @@ const UsersPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Manage Roles Dialog */}
-      <Dialog open={isRolesOpen} onOpenChange={setIsRolesOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
-          <DialogHeader>
-            <DialogTitle className="text-slate-900 dark:text-white">Manage Roles - <span className="text-slate-500 dark:text-slate-400 font-normal">{managingUser?.name}</span></DialogTitle>
-            <DialogDescription className="text-slate-500 dark:text-slate-400">
-              Assign or remove roles for this user.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-             {rolesError && (
-               <div className="text-sm font-medium text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-3 rounded-md border border-red-200 dark:border-red-900/50 mb-4">
-                 {rolesError}
-               </div>
-             )}
-
-             {rolesLoading && <div className="text-sm text-center text-slate-500 dark:text-slate-400 mb-4">Updating roles...</div>}
-
-             <div className="space-y-3">
-                {roles.length === 0 ? (
-                  <div className="text-sm text-center text-slate-500 dark:text-slate-400 py-4">Loading roles...</div>
-                ) : (
-                  roles.map(role => {
-                    const hasRole = managingUser?.roles.includes(role.name);
-                    return (
-                      <div key={role.id} className="flex items-center justify-between p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 transition-colors hover:border-slate-300 dark:hover:border-slate-700">
-                        <div>
-                          <p className="font-semibold text-sm text-slate-900 dark:text-white">{role.name}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{role.description}</p>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant={hasRole ? 'destructive' : 'outline'}
-                          disabled={rolesLoading}
-                          onClick={() => handleToggleRole(role.name, role.id)}
-                          className={!hasRole ? "border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800" : ""}
-                        >
-                          {hasRole ? 'Remove' : 'Assign'}
-                        </Button>
-                      </div>
-                    );
-                  })
-                )}
-             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRolesOpen(false)} className="border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 w-full sm:w-auto">Done</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation Alert */}
+      <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+        <AlertDialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+              </div>
+              <AlertDialogTitle className="text-xl text-slate-900 dark:text-white">Delete User</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="text-slate-500 dark:text-slate-400 mt-2">
+              Apakah Anda benar-benar yakin ingin menghapus akses user <strong>{userToDelete}</strong>? Aksi ini akan mencabut seluruh kredensial dan hak akses milik user secara permanen dari sistem E-Recruitment DH.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-4 sm:space-x-3">
+            <AlertDialogCancel className="border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+              Batalkan
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={(e) => {
+                e.preventDefault();
+                handleDelete();
+              }}
+              disabled={formLoading}
+              className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-600 dark:hover:bg-red-700 focus:ring-red-500"
+            >
+              {formLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Ya, Hapus Permanen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
