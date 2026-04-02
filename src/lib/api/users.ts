@@ -120,12 +120,12 @@ export const getAdminUsers = async (): Promise<AdminUser[]> => {
   return response.data.data || response.data;
 };
 
-export const createAdminUser = async (data: { jde: string; name?: string; is_admin: boolean; password?: string }): Promise<any> => {
+export const createAdminUser = async (data: { jde: string; name?: string; is_admin: boolean; password?: string; rc_org_recs?: UserOrgRec[] }): Promise<any> => {
   const response = await api.post('/admin/users/store', data);
   return response.data;
 };
 
-export const updateAdminUser = async (jde: string, data: { jde: string; name?: string; password?: string }): Promise<any> => {
+export const updateAdminUser = async (jde: string, data: { jde: string; name?: string; password?: string; is_admin?: boolean; rc_org_recs?: UserOrgRec[] }): Promise<any> => {
   const response = await api.put(`/admin/users/${jde}`, data);
   return response.data;
 };
@@ -138,5 +138,36 @@ export const deleteAdminUser = async (jde: string): Promise<any> => {
 export const setAdminUser = async (jde: string, data: { is_admin: boolean }): Promise<any> => {
   const response = await api.post(`/admin/users/${jde}/set-admin`, data);
   return response.data;
+};
+
+// --- RCOrgRecMs Endpoints ---
+
+export interface UserOrgRec {
+  OrgRecId: string;
+  OrgRecCode?: string;
+  OrgRecName?: string;
+  FgDefault?: boolean | string;
+  FgStatus?: string;
+  FgPosition?: string;
+  FgJobTtl?: string;
+  FgOrg?: string;
+  FgJobLvl?: string;
+  FgLoc?: string;
+  FgComp?: string;
+  UpdDate?: string;
+  UpdUser?: string;
+  UpdFlag?: string;
+}
+
+export const getUserOrgRecs = async (jde: string): Promise<UserOrgRec[]> => {
+  const response = await api.get(`/admin/users/${jde}/org-recs`);
+  return Array.isArray(response.data) ? response.data : 
+         (response.data?.data && Array.isArray(response.data.data) ? response.data.data : []);
+};
+
+export const getOrgRecsMasterList = async (): Promise<UserOrgRec[]> => {
+  const response = await api.get('/admin/org-recs');
+  return Array.isArray(response.data) ? response.data : 
+         (response.data?.data && Array.isArray(response.data.data) ? response.data.data : []);
 };
 
