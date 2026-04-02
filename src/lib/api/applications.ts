@@ -1,6 +1,10 @@
 import axiosInstance from "../axios";
 import { type Job } from "./jobs";
 
+const publicApiBaseUrl =
+import.meta.env.VITE_API_URL_LOCAL;
+const captchaApiBaseUrl = import.meta.env.VITE_API_URL;
+
 export interface Identity {
   id: number;
   application_id: string;
@@ -154,12 +158,11 @@ export interface ApplicationStatisticsResponse {
 export const submitApplication = async (
   formData: FormData,
 ): Promise<SubmitApplicationResponse> => {
-  const baseUrl =
-    import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
   const response = await axiosInstance.post<SubmitApplicationResponse>(
-    `${baseUrl}/candidates/apply-job`,
+    "/candidates/apply-job",
     formData,
     {
+      baseURL: publicApiBaseUrl,
       headers: {
         "Content-Type": "multipart/form-data",
       },
@@ -181,6 +184,9 @@ export const checkApplication = async (
       email,
       job_id: jobId,
     },
+    {
+      baseURL: publicApiBaseUrl,
+    },
   );
   return response.data;
 };
@@ -194,6 +200,9 @@ export const checkEmail = async (
   const response = await axiosInstance.post<CheckApplicationResponse>(
     "/candidates/check-email",
     { email },
+    {
+      baseURL: publicApiBaseUrl,
+    },
   );
   return response.data;
 };
@@ -208,6 +217,9 @@ export const checkIdentity = async (
     "/candidates/check-identity",
     {
       identity_number: identityNumber,
+    },
+    {
+      baseURL: publicApiBaseUrl,
     },
   );
   return response.data;
@@ -288,6 +300,9 @@ export const exportAttachments = async (params?: {
 export const getCaptchaConfig = async (): Promise<CaptchaConfigResponse> => {
   const response = await axiosInstance.get<CaptchaConfigResponse>(
     "/candidates/captcha-config",
+    {
+      baseURL: captchaApiBaseUrl,
+    },
   );
   return response.data;
 };
@@ -301,6 +316,9 @@ export const testCaptcha = async (
   const response = await axiosInstance.post<CaptchaVerifyResponse>(
     "/applications/test-captcha",
     { captcha_token: token },
+    {
+      baseURL: captchaApiBaseUrl,
+    },
   );
   return response.data;
 };
