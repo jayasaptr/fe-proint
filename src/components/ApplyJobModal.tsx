@@ -914,7 +914,7 @@ export const ApplyJobModal = ({
       const res = await submitApplication(data);
       if (res.success) {
         toast.success(
-          `Lamaran berhasil dikirim! Kode: ${res.data?.candidate_code || ""}`,
+          `Lamaran berhasil dikirim, terima kasih!`,
         );
         turnstileInstance?.reset();
         setCaptchaToken(null);
