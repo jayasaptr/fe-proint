@@ -4,13 +4,19 @@ import {
   ChevronRight,
   MapPin,
   Search,
-  X
+  X,
 } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
-import { positionAuditService, vacancyService, type PosAdtGrpDt, type PosAdtGrpHd, type Vacancy } from "../lib/api/vacancies";
+import {
+  positionAuditService,
+  vacancyService,
+  type PosAdtGrpDt,
+  type PosAdtGrpHd,
+  type Vacancy,
+} from "../lib/api/vacancies";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,20 +25,14 @@ import {
   CardContent,
   CardFooter,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const decodeHTML = (html: string) => {
-  if (!html) return '';
+  if (!html) return "";
   const txt = document.createElement("textarea");
   txt.innerHTML = html;
   return txt.value;
@@ -50,7 +50,8 @@ const CareerPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
-  const [applyDevelopmentVacancy, setApplyDevelopmentVacancy] = useState<Vacancy | null>(null);
+  const [applyDevelopmentVacancy, setApplyDevelopmentVacancy] =
+    useState<Vacancy | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(9);
@@ -63,10 +64,10 @@ const CareerPage: React.FC = () => {
 
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [draftCategoryId, setDraftCategoryId] = useState<number | null>(null);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [draftOptionId, setDraftOptionId] = useState<number | null>(null);
-  const [selectedOptionId, setSelectedOptionId] = useState<number | null>(null);
+  const [draftCategoryIds, setDraftCategoryIds] = useState<number[]>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [draftOptionIds, setDraftOptionIds] = useState<number[]>([]);
+  const [selectedOptionIds, setSelectedOptionIds] = useState<number[]>([]);
   useEffect(() => {
     const fetchCategories = async () => {
       setIsLoadingCategories(true);
@@ -85,15 +86,16 @@ const CareerPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!draftCategoryId) {
+    if (draftCategoryIds.length === 0) {
       setCategoryOptions([]);
-      setDraftOptionId(null);
+      setDraftOptionIds([]);
       return;
     }
     const fetchOptions = async () => {
       setIsLoadingOptions(true);
       try {
-        const res = await positionAuditService.getOptionsByCategory(draftCategoryId);
+        const res =
+          await positionAuditService.getOptionsByCategory(draftCategoryIds);
         if (res.success) {
           setCategoryOptions(res.data);
         }
@@ -104,7 +106,7 @@ const CareerPage: React.FC = () => {
       }
     };
     fetchOptions();
-  }, [draftCategoryId]);
+  }, [draftCategoryIds]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -133,10 +135,11 @@ const CareerPage: React.FC = () => {
       };
 
       if (searchTerm) apiFilters.search = searchTerm;
-      if (selectedOptionId) {
-        apiFilters.posadt_grp_id = selectedOptionId;
-      } else if (selectedCategoryId) {
-        apiFilters.posadt_type_id = selectedCategoryId;
+      if (selectedOptionIds.length > 0) {
+        apiFilters.posadt_grp_id = selectedOptionIds;
+      }
+      if (selectedCategoryIds.length > 0) {
+        apiFilters.posadt_type_id = selectedCategoryIds;
       }
 
       const response = await vacancyService.getVacancies(apiFilters);
@@ -157,21 +160,40 @@ const CareerPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, itemsPerPage, searchTerm, selectedCategoryId, selectedOptionId]);
+  }, [
+    currentPage,
+    itemsPerPage,
+    searchTerm,
+    selectedCategoryIds,
+    selectedOptionIds,
+  ]);
 
   const handleSearchSubmit = useCallback(() => {
     const normalizedSearch = searchInput.trim();
-    const isSameSearch = normalizedSearch === searchTerm && draftCategoryId === selectedCategoryId && draftOptionId === selectedOptionId;
+    const isSameSearch =
+      normalizedSearch === searchTerm &&
+      JSON.stringify(draftCategoryIds) ===
+        JSON.stringify(selectedCategoryIds) &&
+      JSON.stringify(draftOptionIds) === JSON.stringify(selectedOptionIds);
 
     setCurrentPage(1);
     setSearchTerm(normalizedSearch);
-    setSelectedCategoryId(draftCategoryId);
-    setSelectedOptionId(draftOptionId);
+    setSelectedCategoryIds(draftCategoryIds);
+    setSelectedOptionIds(draftOptionIds);
 
     if (currentPage === 1 && isSameSearch) {
       fetchVacancies();
     }
-  }, [currentPage, fetchVacancies, searchInput, searchTerm, draftCategoryId, selectedCategoryId, draftOptionId, selectedOptionId]);
+  }, [
+    currentPage,
+    fetchVacancies,
+    searchInput,
+    searchTerm,
+    draftCategoryIds,
+    selectedCategoryIds,
+    draftOptionIds,
+    selectedOptionIds,
+  ]);
 
   useEffect(() => {
     fetchVacancies();
@@ -192,14 +214,14 @@ const CareerPage: React.FC = () => {
           onSearchSubmit={handleSearchSubmit}
           categories={categories}
           categoryOptions={categoryOptions}
-          selectedCategoryId={draftCategoryId}
-          selectedOptionId={draftOptionId}
-          onCategoryChange={(val: string) => {
-            setDraftCategoryId(val === "all" ? null : Number(val));
-            setDraftOptionId(null);
+          selectedCategoryIds={draftCategoryIds}
+          selectedOptionIds={draftOptionIds}
+          onCategoryChange={(vals: string[]) => {
+            setDraftCategoryIds(vals.map(Number));
+            setDraftOptionIds([]);
           }}
-          onOptionChange={(val: string) => {
-            setDraftOptionId(val === "all" ? null : Number(val));
+          onOptionChange={(vals: string[]) => {
+            setDraftOptionIds(vals.map(Number));
           }}
           isLoadingCategories={isLoadingCategories}
           isLoadingOptions={isLoadingOptions}
@@ -210,7 +232,7 @@ const CareerPage: React.FC = () => {
         ) : vacancies.length > 0 ? (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {vacancies.map((vacancy) => (
+              {vacancies.map((vacancy) => (
                 <VacancyCard
                   key={vacancy.VacantPosId}
                   vacancy={vacancy}
@@ -256,7 +278,15 @@ const CareerPage: React.FC = () => {
 
 const HeroBanner = () => (
   <div className="relative h-87.5 w-full overflow-hidden">
-    <img src={HeroImg} alt="Office" className="w-full h-full object-cover" width={1200} height={350} fetchPriority="high" decoding="async" />
+    <img
+      src={HeroImg}
+      alt="Office"
+      className="w-full h-full object-cover"
+      width={1200}
+      height={350}
+      fetchPriority="high"
+      decoding="async"
+    />
     <div className="absolute inset-0 bg-linear-to-t from-slate-900/90 via-slate-900/40 to-slate-900/40 flex items-end">
       <div className="max-w-6xl mx-auto px-6 pb-16 w-full text-white text-center md:text-left relative z-10">
         <h1 className="text-4xl md:text-5xl font-bold mb-2">
@@ -271,12 +301,17 @@ const HeroBanner = () => (
 );
 
 const FilterBar = ({
-  searchTerm, onSearchChange,
+  searchTerm,
+  onSearchChange,
   onSearchSubmit,
-  categories, categoryOptions,
-  selectedCategoryId, selectedOptionId,
-  onCategoryChange, onOptionChange,
-  isLoadingCategories, isLoadingOptions
+  categories,
+  categoryOptions,
+  selectedCategoryIds,
+  selectedOptionIds,
+  onCategoryChange,
+  onOptionChange,
+  isLoadingCategories,
+  isLoadingOptions,
 }: any) => (
   <Card className="p-2 md:p-1.5 mb-10 shadow-lg border-slate-100 rounded-2xl md:rounded-full bg-white w-full">
     <div className="flex flex-col md:flex-row items-stretch md:items-center divide-y md:divide-y-0 md:divide-x divide-slate-100 md:divide-slate-200">
@@ -294,31 +329,31 @@ const FilterBar = ({
           className="border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 text-slate-700 bg-transparent h-12 px-3 w-full placeholder:text-slate-400 placeholder:font-normal text-sm md:text-base"
         />
       </div>
-      <div className="flex-1 flex items-center px-4 py-1 md:py-0">
-        <Select value={selectedCategoryId ? selectedCategoryId.toString() : "all"} onValueChange={onCategoryChange}>
-          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-placeholder:text-slate-400 text-sm md:text-base">
-            <SelectValue placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"} />
-          </SelectTrigger>
-          <SelectContent className="font-medium text-slate-700">
-            <SelectItem value="all">Semua Kategori</SelectItem>
-            {categories.map((c: any) => (
-              <SelectItem key={c.PosAdtTypeId} value={c.PosAdtTypeId.toString()}>{c.PosAdtName}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
+        <MultiSelect
+          options={categories.map((c: any) => ({
+            label: c.PosAdtName,
+            value: c.PosAdtTypeId.toString(),
+          }))}
+          selected={(selectedCategoryIds || []).map(String)}
+          onChange={onCategoryChange}
+          placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"}
+          disabled={isLoadingCategories}
+          maxSelection={2}
+        />
       </div>
-      <div className="flex-1 flex items-center px-4 py-1 md:py-0">
-        <Select value={selectedOptionId ? selectedOptionId.toString() : "all"} onValueChange={onOptionChange} disabled={!selectedCategoryId}>
-          <SelectTrigger className="border-0 shadow-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 bg-transparent h-12 w-full px-3 text-slate-700 data-placeholder:text-slate-400 text-sm md:text-base">
-            <SelectValue placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"} />
-          </SelectTrigger>
-          <SelectContent className="font-medium text-slate-700">
-            <SelectItem value="all">Semua Opsi</SelectItem>
-            {categoryOptions.map((o: any) => (
-              <SelectItem key={o.PosAdtGrpId} value={o.PosAdtGrpId.toString()}>{o.PosAdtGrpName}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
+        <MultiSelect
+          options={categoryOptions.map((o: any) => ({
+            label: o.PosAdtGrpName,
+            value: o.PosAdtGrpId.toString(),
+          }))}
+          selected={(selectedOptionIds || []).map(String)}
+          onChange={onOptionChange}
+          placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"}
+          disabled={!selectedCategoryIds || selectedCategoryIds.length === 0}
+          maxSelection={2}
+        />
       </div>
       <div className="px-3 md:px-0 md:pl-2 shrink-0 pt-3 md:pt-0 pb-1 md:pb-0">
         <Button
@@ -345,37 +380,69 @@ const VacancyCard = ({
       <CardHeader className="pb-0">
         <div className="flex justify-between items-start mb-2">
           <div className="bg-white border border-slate-100 rounded-xl shadow-sm flex items-center justify-center w-12 h-12 overflow-hidden shrink-0">
-            <img src={DHImg} alt="DH Logo" className="w-full h-full object-contain p-1.5" />
+            <img
+              src={DHImg}
+              alt="DH Logo"
+              className="w-full h-full object-contain p-1.5"
+            />
           </div>
-          <Badge variant="secondary" className={`bg-green-100 text-green-700 hover:bg-green-100 uppercase text-xs font-bold mt-1 shrink-0`}>
-            {vacancy.FgActive === 'Y' && vacancy.FgShowVacant === 'Y' ? 'Open' : (vacancy.FgActive === 'N' ? 'Closed' : 'Draft')}
+          <Badge
+            variant="secondary"
+            className={`bg-green-100 text-green-700 hover:bg-green-100 uppercase text-xs font-bold mt-1 shrink-0`}
+          >
+            {vacancy.FgActive === "Y" && vacancy.FgShowVacant === "Y"
+              ? "Open"
+              : vacancy.FgActive === "N"
+                ? "Closed"
+                : "Draft"}
           </Badge>
         </div>
-        <CardTitle className="text-xl text-slate-800">{vacancy.VacantPositionName}</CardTitle>
-        <p className="text-xs text-slate-400 font-mono">{vacancy.VacantPosCode}</p>
+        <CardTitle className="text-xl text-slate-800">
+          {vacancy.VacantPositionName}
+        </CardTitle>
+        <p className="text-xs text-slate-400 font-mono">
+          {vacancy.VacantPosCode}
+        </p>
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-slate-500 flex-1 flex flex-col">
         <div className="flex-1 mt-2">
           {vacancy.PosAdtGroups && vacancy.PosAdtGroups.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
-               {vacancy.PosAdtGroups.map((group, index) => (
-                 <Badge key={index} variant="outline" className="bg-slate-50 text-slate-600 font-normal">
-                   {group.PosAdtGrpName}
-                 </Badge>
-               ))}
+              {vacancy.PosAdtGroups.map((group, index) => (
+                <Badge
+                  key={index}
+                  variant="outline"
+                  className="bg-slate-50 text-slate-600 font-normal"
+                >
+                  {group.PosAdtGrpName}
+                </Badge>
+              ))}
             </div>
           )}
-           <p className="line-clamp-3 text-slate-600 leading-relaxed" dangerouslySetInnerHTML={{ __html: decodeHTML(vacancy.VacantPosSpec) }} />
+          <p
+            className="line-clamp-3 text-slate-600 leading-relaxed"
+            dangerouslySetInnerHTML={{
+              __html: decodeHTML(vacancy.VacantPosSpec),
+            }}
+          />
         </div>
         <div className="space-y-1.5 border-t border-slate-100 pt-3 mt-auto">
-          {vacancy.PosAdtGroups?.find(g => g.PosAdtName.toLowerCase() === 'location') && (
+          {vacancy.PosAdtGroups?.find(
+            (g) => g.PosAdtName.toLowerCase() === "location",
+          ) && (
             <p className="flex items-center gap-2 text-slate-500">
-              <MapPin size={16} className="text-slate-400" /> {vacancy.PosAdtGroups?.find(g => g.PosAdtName.toLowerCase() === 'location')?.PosAdtGrpName}
+              <MapPin size={16} className="text-slate-400" />{" "}
+              {
+                vacancy.PosAdtGroups?.find(
+                  (g) => g.PosAdtName.toLowerCase() === "location",
+                )?.PosAdtGrpName
+              }
             </p>
           )}
           {vacancy.VacantExpDate && (
             <p className="flex items-center gap-2 text-slate-500">
-              <Calendar size={16} className="text-slate-400" /> Batas: {new Date(vacancy.VacantExpDate).toLocaleDateString('id-ID')}
+              <Calendar size={16} className="text-slate-400" /> Batas:{" "}
+              {new Date(vacancy.VacantExpDate).toLocaleDateString("id-ID")}
             </p>
           )}
         </div>
@@ -410,8 +477,8 @@ const PaginationNav = ({
   onPageChange: (p: number) => void;
 }) => {
   const width = useWindowWidth();
-  const isMobile = width < 640;   // sm breakpoint
-  const isTablet = width < 1024;  // lg breakpoint
+  const isMobile = width < 640; // sm breakpoint
+  const isTablet = width < 1024; // lg breakpoint
 
   const getPageNumbers = (): (number | string)[] => {
     const totalPages = pagination.pages;
@@ -452,10 +519,25 @@ const PaginationNav = ({
     }
 
     if (currentPage >= totalPages - 2) {
-      return [1, "...", totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+      return [
+        1,
+        "...",
+        totalPages - 3,
+        totalPages - 2,
+        totalPages - 1,
+        totalPages,
+      ];
     }
 
-    return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
+    return [
+      1,
+      "...",
+      currentPage - 1,
+      currentPage,
+      currentPage + 1,
+      "...",
+      totalPages,
+    ];
   };
 
   const pages = getPageNumbers();
@@ -484,8 +566,13 @@ const PaginationNav = ({
             {p}
           </Button>
         ) : (
-          <span key={i} className="text-slate-400 font-bold shrink-0 px-1 sm:px-2 min-w-4 text-center text-sm">...</span>
-        )
+          <span
+            key={i}
+            className="text-slate-400 font-bold shrink-0 px-1 sm:px-2 min-w-4 text-center text-sm"
+          >
+            ...
+          </span>
+        ),
       )}
 
       <Button
@@ -531,21 +618,33 @@ const DevelopmentNoticeModal = ({
   <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
     <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95">
       <div className="bg-amber-50 border-b border-amber-100 px-6 py-5">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-600">Pemberitahuan</p>
-        <h3 className="mt-2 text-2xl font-bold text-slate-900">Fitur Apply Job Masih Development</h3>
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-600">
+          Pemberitahuan
+        </p>
+        <h3 className="mt-2 text-2xl font-bold text-slate-900">
+          Fitur Apply Job Masih Development
+        </h3>
       </div>
 
       <div className="px-6 py-5 space-y-3">
         <p className="text-sm leading-relaxed text-slate-600">
-          Fitur apply job untuk lowongan <span className="font-semibold text-slate-900">{vacancy.VacantPositionName}</span> saat ini masih dalam proses development.
+          Fitur apply job untuk lowongan{" "}
+          <span className="font-semibold text-slate-900">
+            {vacancy.VacantPositionName}
+          </span>{" "}
+          saat ini masih dalam proses development.
         </p>
         <p className="text-sm leading-relaxed text-slate-600">
-          Silakan coba kembali nanti. Untuk sementara, informasi lowongan masih dapat dilihat seperti biasa.
+          Silakan coba kembali nanti. Untuk sementara, informasi lowongan masih
+          dapat dilihat seperti biasa.
         </p>
       </div>
 
       <div className="px-6 pb-6 flex justify-end">
-        <Button onClick={onClose} className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800 px-6">
+        <Button
+          onClick={onClose}
+          className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800 px-6"
+        >
           Mengerti
         </Button>
       </div>
@@ -553,7 +652,15 @@ const DevelopmentNoticeModal = ({
   </div>
 );
 
-const JobModal = ({ vacancy, onClose, onApply }: { vacancy: Vacancy; onClose: () => void; onApply: (v: Vacancy) => void }) => (
+const JobModal = ({
+  vacancy,
+  onClose,
+  onApply,
+}: {
+  vacancy: Vacancy;
+  onClose: () => void;
+  onApply: (v: Vacancy) => void;
+}) => (
   <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
     <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
       <div className="bg-primary p-8 relative shrink-0">
@@ -563,31 +670,40 @@ const JobModal = ({ vacancy, onClose, onApply }: { vacancy: Vacancy; onClose: ()
         >
           <X />
         </button>
-        <h2 className="text-2xl font-bold text-primary-foreground mt-4">{vacancy.VacantPositionName}</h2>
+        <h2 className="text-2xl font-bold text-primary-foreground mt-4">
+          {vacancy.VacantPositionName}
+        </h2>
         <p className="text-primary-foreground/80 text-sm mt-2 flex gap-2 flex-wrap">
-           {vacancy.PosAdtGroups?.map((group, index) => (
-              <span key={index} className="bg-primary-foreground/20 px-2 py-0.5 rounded text-xs">
-                {group.PosAdtName}: {group.PosAdtGrpName}
-              </span>
-           ))}
+          {vacancy.PosAdtGroups?.map((group, index) => (
+            <span
+              key={index}
+              className="bg-primary-foreground/20 px-2 py-0.5 rounded text-xs"
+            >
+              {group.PosAdtName}: {group.PosAdtGrpName}
+            </span>
+          ))}
         </p>
       </div>
       <div className="p-8 overflow-y-auto flex-1">
         {vacancy.VacantPosSpec && (
           <>
             <h4 className="font-bold mb-2 flex items-center gap-2 text-slate-800">
-               Deskripsi
+              Deskripsi
             </h4>
             <div
               className="text-slate-600 leading-relaxed prose prose-sm max-w-none mb-4"
-              dangerouslySetInnerHTML={{ __html: decodeHTML(vacancy.VacantPosSpec) }}
+              dangerouslySetInnerHTML={{
+                __html: decodeHTML(vacancy.VacantPosSpec),
+              }}
             />
           </>
         )}
         {vacancy.VacantNote && (
-          <div className="text-slate-600 mb-6 leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: decodeHTML(vacancy.VacantNote) }} />
+          <div
+            className="text-slate-600 mb-6 leading-relaxed prose prose-sm max-w-none"
+            dangerouslySetInnerHTML={{ __html: decodeHTML(vacancy.VacantNote) }}
+          />
         )}
-
       </div>
       <div className="p-6 bg-slate-50 border-t flex gap-3 shrink-0">
         <Button
@@ -597,7 +713,10 @@ const JobModal = ({ vacancy, onClose, onApply }: { vacancy: Vacancy; onClose: ()
         >
           Tutup
         </Button>
-        <Button onClick={() => onApply(vacancy)} className="flex-2 h-12 bg-primary text-primary-foreground rounded-xl font-semibold shadow-lg hover:bg-primary/90 transition-all">
+        <Button
+          onClick={() => onApply(vacancy)}
+          className="flex-2 h-12 bg-primary text-primary-foreground rounded-xl font-semibold shadow-lg hover:bg-primary/90 transition-all"
+        >
           Lamar Sekarang
         </Button>
       </div>
