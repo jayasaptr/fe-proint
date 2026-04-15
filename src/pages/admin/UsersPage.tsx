@@ -343,6 +343,7 @@ const UsersPage: React.FC = () => {
                 </th>
                 <th className="px-6 py-4 font-medium tracking-wider">JDE</th>
                 <th className="px-6 py-4 font-medium tracking-wider">Name</th>
+                <th className="px-6 py-4 font-medium tracking-wider">Site</th>
                 <th className="px-6 py-4 font-medium tracking-wider text-center">
                   Status
                 </th>
@@ -358,7 +359,7 @@ const UsersPage: React.FC = () => {
               {loading || isAuthorized === null ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-8 text-center text-slate-500"
                   >
                     <div className="flex justify-center items-center gap-2">
@@ -370,7 +371,7 @@ const UsersPage: React.FC = () => {
               ) : paginatedUsers.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-8 text-center text-slate-500"
                   >
                     No users found.
@@ -390,6 +391,19 @@ const UsersPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
                       {user.name || "-"}
+                    </td>
+                    <td className="px-6 py-4">
+                      {user.rc_org_recs && user.rc_org_recs.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {user.rc_org_recs.map((org: any) => (
+                            <Badge key={org.OrgRecId} variant="outline" className="text-[10px] bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-normal px-1.5 py-0">
+                              {org.OrgRecCode}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 dark:text-slate-400">-</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center items-center gap-3">

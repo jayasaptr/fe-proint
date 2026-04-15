@@ -113,6 +113,7 @@ export interface AdminUser {
   is_admin: boolean;
   created_at: string;
   updated_at: string;
+  rc_org_recs?: UserOrgRec[];
 }
 
 export const getAdminUsers = async (): Promise<AdminUser[]> => {

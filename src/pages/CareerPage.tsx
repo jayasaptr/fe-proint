@@ -6,7 +6,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
@@ -17,6 +17,8 @@ import {
   type PosAdtGrpHd,
   type Vacancy,
 } from "../lib/api/vacancies";
+
+const ApplyJobModal = lazy(() => import("../components/ApplyJobModal").then(m => ({ default: m.ApplyJobModal })));
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -257,18 +259,21 @@ const CareerPage: React.FC = () => {
         <JobModal
           vacancy={selectedVacancy}
           onClose={() => setSelectedVacancy(null)}
-          onApply={(v) => {
-            setSelectedVacancy(null);
-            setApplyDevelopmentVacancy(v);
-          }}
+          onApply={(v) => { setSelectedVacancy(null); setApplyingVacancy(v); }}
         />
       )}
 
-      {applyDevelopmentVacancy && (
-        <DevelopmentNoticeModal
-          vacancy={applyDevelopmentVacancy}
-          onClose={() => setApplyDevelopmentVacancy(null)}
-        />
+      {applyingVacancy && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        }>
+          <ApplyJobModal
+            vacancy={applyingVacancy}
+            onClose={() => setApplyingVacancy(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
@@ -359,7 +364,7 @@ const FilterBar = ({
         <Button
           type="button"
           onClick={onSearchSubmit}
-          className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-linear-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
+          className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
         >
           Search
         </Button>
