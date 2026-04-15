@@ -6,7 +6,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
@@ -17,8 +17,6 @@ import {
   type PosAdtGrpHd,
   type Vacancy,
 } from "../lib/api/vacancies";
-
-const ApplyJobModal = lazy(() => import("../components/ApplyJobModal").then(m => ({ default: m.ApplyJobModal })));
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,8 +50,7 @@ const CareerPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   const [selectedVacancy, setSelectedVacancy] = useState<Vacancy | null>(null);
-  const [applyDevelopmentVacancy, setApplyDevelopmentVacancy] =
-    useState<Vacancy | null>(null);
+  const [applyingVacancy, setApplyingVacancy] = useState<Vacancy | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(9);
@@ -259,21 +256,18 @@ const CareerPage: React.FC = () => {
         <JobModal
           vacancy={selectedVacancy}
           onClose={() => setSelectedVacancy(null)}
-          onApply={(v) => { setSelectedVacancy(null); setApplyingVacancy(v); }}
+          onApply={(v) => {
+            setSelectedVacancy(null);
+            setApplyingVacancy(v);
+          }}
         />
       )}
 
       {applyingVacancy && (
-        <Suspense fallback={
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-            <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
-          </div>
-        }>
-          <ApplyJobModal
-            vacancy={applyingVacancy}
-            onClose={() => setApplyingVacancy(null)}
-          />
-        </Suspense>
+        <DevelopmentNoticeModal
+          vacancy={applyingVacancy}
+          onClose={() => setApplyingVacancy(null)}
+        />
       )}
     </div>
   );

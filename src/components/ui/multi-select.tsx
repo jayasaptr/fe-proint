@@ -79,8 +79,17 @@ export function MultiSelect({
                   }}
                 >
                   <span className="truncate max-w-[80px]">{option?.label}</span>
-                  <button
-                    className="ml-1 ring-offset-background rounded-full outline-hidden"
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className="ml-1 ring-offset-background rounded-full outline-hidden cursor-pointer"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleUnselect(item);
+                      }
+                    }}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -88,7 +97,7 @@ export function MultiSelect({
                     }}
                   >
                      <X className="h-3 w-3 text-slate-500 hover:text-slate-800" />
-                  </button>
+                  </div>
                 </Badge>
               );
             })}
