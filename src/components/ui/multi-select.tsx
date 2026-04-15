@@ -1,0 +1,174 @@
+import { Check, ChevronDown, X } from "lucide-react";
+import * as React from "react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+
+export interface Option {
+  label: string;
+  value: string;
+}
+
+interface MultiSelectProps {
+  options: Option[];
+  selected: string[];
+  onChange: (selected: string[]) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+  maxCount?: number;
+  maxSelection?: number;
+}
+
+export function MultiSelect({
+  options,
+  selected,
+  onChange,
+  placeholder = "Pilih opsi...",
+  className,
+  disabled = false,
+  maxCount = 1,
+  maxSelection,
+}: MultiSelectProps) {
+  const [open, setOpen] = React.useState(false);
+
+  const handleUnselect = (item: string) => {
+    onChange(selected.filter((i) => i !== item));
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild disabled={disabled}>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "w-full justify-between hover:bg-transparent font-normal border-0 shadow-none px-3 h-12",
+            className,
+          )}
+        >
+          <div className="flex flex-1 items-center gap-1.5 min-w-0 overflow-hidden">
+            {selected.length === 0 && (
+              <span className="text-slate-400 truncate">{placeholder}</span>
+            )}
+            {selected.slice(0, maxCount).map((item) => {
+              const option = options.find((o) => o.value === item);
+              return (
+                <Badge
+                  key={item}
+                  variant="secondary"
+                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium px-2 py-0.5 h-7 flex items-center shrink-0 max-w-[120px] md:max-w-[180px]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUnselect(item);
+                  }}
+                >
+                  <span className="truncate max-w-[80px]">{option?.label}</span>
+                  <button
+                    className="ml-1 ring-offset-background rounded-full outline-hidden"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleUnselect(item);
+                    }}
+                  >
+                     <X className="h-3 w-3 text-slate-500 hover:text-slate-800" />
+                  </button>
+                </Badge>
+              );
+            })}
+            {selected.length > maxCount && (
+              <Badge
+                variant="secondary"
+                className="bg-slate-100 text-slate-700 font-medium px-2 py-0.5 h-7 flex items-center shrink-0"
+              >
+                +{selected.length - maxCount}
+              </Badge>
+            )}
+          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Cari..." />
+          <CommandList>
+            <CommandEmpty>Tidak ada hasil.</CommandEmpty>
+            <CommandGroup>
+              {!maxSelection && (
+                <CommandItem
+                  onSelect={() => {
+                    if (selected.length === options.length) {
+                      onChange([]);
+                    } else {
+                      onChange(options.map((o) => o.value));
+                    }
+                  }}
+                >
+                  <div
+                    className={cn(
+                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                      selected.length === options.length
+                        ? "bg-slate-900 text-white"
+                        : "opacity-50 [&_svg]:invisible",
+                    )}
+                  >
+                    <Check className={cn("h-4 w-4")} />
+                  </div>
+                  Pilih Semua
+                </CommandItem>
+              )}
+              {options.map((option) => {
+                const isSelected = selected.includes(option.value);
+                const isDisabled = !isSelected && maxSelection !== undefined && selected.length >= maxSelection;
+
+                return (
+                  <CommandItem
+                    key={option.value}
+                    disabled={isDisabled}
+                    className={cn(isDisabled && "opacity-50 cursor-not-allowed")}
+                    onSelect={() => {
+                      if (isDisabled) return;
+                      onChange(
+                        isSelected
+                          ? selected.filter((item) => item !== option.value)
+                          : [...selected, option.value],
+                      );
+                    }}
+                  >
+                    <div
+                      className={cn(
+                        "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                        isSelected
+                          ? "bg-slate-900 text-white"
+                          : "opacity-50 [&_svg]:invisible",
+                      )}
+                    >
+                      <Check className={cn("h-4 w-4")} />
+                    </div>
+                    {option.label}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}

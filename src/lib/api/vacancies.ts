@@ -80,8 +80,8 @@ export interface VacancyFilters {
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
   search?: string;
-  posadt_grp_id?: number;
-  posadt_type_id?: number;
+  posadt_grp_id?: number | number[];
+  posadt_type_id?: number | number[];
   include_relations?: boolean;
 }
 
@@ -96,13 +96,16 @@ export const positionAuditService = {
     return response.data;
   },
 
-  getOptionsByCategory: async (categoryId: number, includeHeader = false): Promise<PaginatedResponse<PosAdtGrpDt>> => {
+  getOptionsByCategory: async (categoryIds: number | number[], includeHeader = false): Promise<PaginatedResponse<PosAdtGrpDt>> => {
     const response = await api.get('/posadtgrpdt', {
       baseURL: import.meta.env.VITE_API_URL,
       params: {
-        posadt_type_id: categoryId,
+        posadt_type_id: categoryIds,
         include_header: includeHeader,
       },
+      paramsSerializer: {
+        indexes: null
+      }
     });
     return response.data;
   },
@@ -120,7 +123,10 @@ export const vacancyService = {
   getVacancies: async (filters: VacancyFilters = {}): Promise<PaginatedResponse<Vacancy>> => {
     const response = await api.get('/vacancies', { 
       baseURL: import.meta.env.VITE_API_URL,
-      params: filters 
+      params: filters,
+      paramsSerializer: {
+        indexes: null
+      }
     });
     return response.data;
   },

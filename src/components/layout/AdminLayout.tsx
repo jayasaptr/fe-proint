@@ -3,11 +3,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { getCurrentUser, logoutUser } from '@/lib/api/users';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dropdown-menu";
+import { getCurrentUser, logoutUser } from "@/lib/api/users";
+import { cn } from "@/lib/utils";
 import {
   Bell,
   ChevronDown,
@@ -18,48 +17,45 @@ import {
   Sun,
   UserCircle,
   Users,
-  X
-} from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import DHImg from '../../assets/dh.png';
+  X,
+} from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import DHImg from "../../assets/dh.png";
 
 const sidebarGroups = [
   {
-    title: 'MONITORING',
-    links: [
-      { name: 'Dashboard', href: '/admin', icon: Compass },
-    ]
+    title: "MONITORING",
+    links: [{ name: "Dashboard", href: "/admin", icon: Compass }],
   },
   {
-    title: 'RECRUITMENT',
+    title: "RECRUITMENT",
     links: [
-    
-      { name: 'Candidates', href: '/admin/candidates', icon: UserCircle },
-
-    ]
+      { name: "Candidates", href: "/admin/candidates", icon: UserCircle },
+    ],
   },
   {
-    title: 'SYSTEM',
-    links: [
-      { name: 'Users', href: '/admin/users', icon: Users },
-    ]
-  }
+    title: "SYSTEM",
+    links: [{ name: "Users", href: "/admin/users", icon: Users }],
+  },
 ];
 
 const AdminLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false); // Mobile
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // Desktop
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark' ||
-        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (typeof window !== "undefined") {
+      return (
+        localStorage.getItem("theme") === "dark" ||
+        (!localStorage.getItem("theme") &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches)
+      );
     }
     return false;
   });
   const [currentUser, setCurrentUser] = useState<any | null>(() => {
-    if (typeof window !== 'undefined') {
-      const savedUser = localStorage.getItem('user');
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("user");
       return savedUser ? JSON.parse(savedUser) : null;
     }
     return null;
@@ -70,33 +66,33 @@ const AdminLayout: React.FC = () => {
   useEffect(() => {
     const root = window.document.documentElement;
     if (isDarkMode) {
-      root.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+      root.classList.add("dark");
+      localStorage.setItem("theme", "dark");
     } else {
-      root.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      root.classList.remove("dark");
+      localStorage.setItem("theme", "light");
     }
   }, [isDarkMode]);
 
   useEffect(() => {
     const fetchUser = async () => {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       if (!token) {
-        navigate('/login');
+        navigate("/login");
         return;
       }
       try {
         const res = await getCurrentUser();
         if (res.success && res.data) {
           if (res.data.must_change_password) {
-            navigate('/change-password?forced=true');
+            navigate("/change-password?forced=true");
             return;
           }
           setCurrentUser(res.data);
-          localStorage.setItem('user', JSON.stringify(res.data));
+          localStorage.setItem("user", JSON.stringify(res.data));
         }
       } catch (error) {
-        console.error('Failed to fetch user', error);
+        console.error("Failed to fetch user", error);
       }
     };
     fetchUser();
@@ -106,11 +102,11 @@ const AdminLayout: React.FC = () => {
     try {
       await logoutUser();
     } catch (error) {
-      console.error('Failed to logout on server', error);
+      console.error("Failed to logout on server", error);
     } finally {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      navigate('/login');
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      navigate("/login");
     }
   };
 
@@ -128,19 +124,35 @@ const AdminLayout: React.FC = () => {
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800 transform transition-all duration-300 ease-in-out md:static flex flex-col",
-          sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0",
-          sidebarCollapsed ? "w-20" : "w-64"
+          sidebarOpen
+            ? "translate-x-0 shadow-2xl"
+            : "-translate-x-full md:translate-x-0",
+          sidebarCollapsed ? "w-20" : "w-64",
         )}
       >
         <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-orange-500/5 dark:from-orange-500/10 to-transparent pointer-events-none" />
 
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100/50 dark:border-slate-800/50 shrink-0 relative z-10">
-          <Link to="/admin" className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center px-0")}>
+          <Link
+            to="/admin"
+            className={cn(
+              "flex items-center gap-3",
+              sidebarCollapsed && "justify-center px-0",
+            )}
+          >
             <div className="bg-white dark:bg-slate-800 rounded-xl p-1 flex items-center justify-center w-8 h-8 border border-slate-200/50 dark:border-slate-700/50 shadow-sm shrink-0">
-              <img src={DHImg} alt="DH Logo" className="w-full h-full object-contain" />
+              <img
+                src={DHImg}
+                alt="DH Logo"
+                className="w-full h-full object-contain"
+              />
             </div>
-            {!sidebarCollapsed && <span className="font-bold text-[17px] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">E-Recruitment</span>}
+            {!sidebarCollapsed && (
+              <span className="font-bold text-[17px] tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
+                E-Recruitment
+              </span>
+            )}
           </Link>
           <button
             className="md:hidden text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-50 dark:bg-slate-800 p-1.5 rounded-lg"
@@ -153,7 +165,9 @@ const AdminLayout: React.FC = () => {
         {/* Sidebar Navigation */}
         <nav className="flex-1 overflow-y-auto py-8 px-4 space-y-8 relative z-10">
           {sidebarGroups
-            .filter(group => group.title !== 'SYSTEM' || currentUser?.is_admin)
+            .filter(
+              (group) => group.title !== "SYSTEM" || currentUser?.is_admin,
+            )
             .map((group, groupIdx) => (
               <div key={groupIdx} className="space-y-2">
                 {!sidebarCollapsed && (
@@ -165,9 +179,10 @@ const AdminLayout: React.FC = () => {
                 <ul className="space-y-1.5">
                   {group.links.map((link) => {
                     const Icon = link.icon;
-                    const isActive = link.href === '/admin'
-                      ? location.pathname === '/admin'
-                      : location.pathname.startsWith(link.href);
+                    const isActive =
+                      link.href === "/admin"
+                        ? location.pathname === "/admin"
+                        : location.pathname.startsWith(link.href);
 
                     return (
                       <li key={link.name}>
@@ -178,23 +193,31 @@ const AdminLayout: React.FC = () => {
                             sidebarCollapsed ? "px-0 justify-center" : "px-3",
                             isActive
                               ? "bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium shadow-sm shadow-orange-500/5 border border-orange-200/50 dark:border-orange-500/20"
-                              : "text-slate-500 dark:text-slate-400 font-normal hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-700 dark:hover:text-slate-200 border border-transparent"
+                              : "text-slate-500 dark:text-slate-400 font-normal hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-700 dark:hover:text-slate-200 border border-transparent",
                           )}
                           title={sidebarCollapsed ? link.name : undefined}
                         >
                           {isActive && (
                             <div className="absolute left-0 top-1 bottom-1 w-1 bg-orange-500 rounded-r-md" />
                           )}
-                          <Icon size={16} className={cn(
-                            "transition-transform duration-300 shrink-0",
-                            isActive ? "text-orange-600 dark:text-orange-400 scale-110" : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-slate-300"
-                          )} />
+                          <Icon
+                            size={16}
+                            className={cn(
+                              "transition-transform duration-300 shrink-0",
+                              isActive
+                                ? "text-orange-600 dark:text-orange-400 scale-110"
+                                : "text-slate-400 group-hover:text-slate-500 dark:group-hover:text-slate-300",
+                            )}
+                          />
                           {!sidebarCollapsed && <span>{link.name}</span>}
 
                           {/* Notification Badge Example */}
-                          {!sidebarCollapsed && (link.name === 'Applications' || link.name === 'Candidates') && !isActive && (
-                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-                          )}
+                          {!sidebarCollapsed &&
+                            (link.name === "Applications" ||
+                              link.name === "Candidates") &&
+                            !isActive && (
+                              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+                            )}
                         </Link>
                       </li>
                     );
@@ -209,16 +232,22 @@ const AdminLayout: React.FC = () => {
           <div className="p-4 m-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm relative z-10 group cursor-pointer hover:border-orange-300 dark:hover:border-orange-500/50 transition-colors">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-[10px] bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold text-sm shrink-0 transition-colors group-hover:bg-orange-500 group-hover:text-white">
-                {currentUser?.name?.charAt(0) || 'U'}
+                {currentUser?.name?.charAt(0) || "U"}
               </div>
               <div className="overflow-hidden flex-1">
                 <div className="flex items-center justify-between gap-1">
-                  <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">{currentUser?.name || 'Administrator'}</p>
+                  <p className="text-[13px] font-semibold text-slate-800 dark:text-slate-200 truncate leading-tight group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
+                    {currentUser?.name || "Administrator"}
+                  </p>
                   {currentUser?.is_admin && (
-                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400 text-[9px] font-bold uppercase tracking-wider border border-orange-200 dark:border-orange-500/20">Admin</span>
+                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400 text-[9px] font-bold uppercase tracking-wider border border-orange-200 dark:border-orange-500/20">
+                      Admin
+                    </span>
                   )}
                 </div>
-                <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">{currentUser?.email || 'admin@ptdh.co.id'}</p>
+                <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">
+                  {currentUser?.email || "admin@ptdh.co.id"}
+                </p>
               </div>
             </div>
           </div>
@@ -260,16 +289,19 @@ const AdminLayout: React.FC = () => {
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800 p-1.5 pr-3 rounded-full transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700 outline-none">
                   <div className="w-8 h-8 rounded-full bg-slate-900 dark:bg-slate-700 flex items-center justify-center text-white font-bold text-sm">
-                    {currentUser?.name?.charAt(0) || 'U'}
+                    {currentUser?.name?.charAt(0) || "U"}
                   </div>
                   <div className="hidden sm:flex sm:flex-col sm:items-start">
                     <div className="flex gap-2 items-start">
                       <div className="col">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-tight">{currentUser?.name || 'Loading...'}</p>
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-tight">
+                            {currentUser?.name || "Loading..."}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{currentUser?.email || 'Administrator'}</p>
-
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {currentUser?.email || "Administrator"}
+                        </p>
                       </div>
                       <div className="col">
                         {currentUser?.is_admin && (
@@ -278,21 +310,26 @@ const AdminLayout: React.FC = () => {
                           </span>
                         )}
                       </div>
-
                     </div>
                   </div>
-                  <ChevronDown size={16} className="text-slate-400 hidden sm:block ml-1" />
+                  <ChevronDown
+                    size={16}
+                    className="text-slate-400 hidden sm:block ml-1"
+                  />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 font-sans">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
+                {/* <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate('/change-password')} className="cursor-pointer">
                   <UserCircle className="mr-2 h-4 w-4 text-slate-500 dark:text-slate-400" />
                   <span>Profile</span>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:bg-red-50 focus:text-red-600 dark:focus:bg-red-950/30 dark:focus:text-red-500 cursor-pointer">
+                <DropdownMenuSeparator /> */}
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="text-red-600 focus:bg-red-50 focus:text-red-600 dark:focus:bg-red-950/30 dark:focus:text-red-500 cursor-pointer"
+                >
                   <LogOut className="mr-2 h-4 w-4 text-red-500" />
                   <span>Log out</span>
                 </DropdownMenuItem>
