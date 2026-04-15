@@ -23,8 +23,14 @@ export interface Option {
   value: string;
 }
 
-interface MultiSelectProps {
+export interface OptionGroup {
+  heading: string;
   options: Option[];
+}
+
+interface MultiSelectProps {
+  options?: Option[];
+  groups?: OptionGroup[];
   selected: string[];
   onChange: (selected: string[]) => void;
   placeholder?: string;
@@ -35,7 +41,8 @@ interface MultiSelectProps {
 }
 
 export function MultiSelect({
-  options,
+  options: optionsProp = [],
+  groups,
   selected,
   onChange,
   placeholder = "Pilih opsi...",
@@ -46,9 +53,50 @@ export function MultiSelect({
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
 
+  // Flatten semua opsi untuk badge rendering
+  const allOptions: Option[] = groups
+    ? groups.flatMap((g) => g.options)
+    : optionsProp;
+
   const handleUnselect = (item: string) => {
     onChange(selected.filter((i) => i !== item));
   };
+
+  const renderItems = (opts: Option[]) =>
+    opts.map((option) => {
+      const isSelected = selected.includes(option.value);
+      const isDisabled =
+        !isSelected &&
+        maxSelection !== undefined &&
+        selected.length >= maxSelection;
+      return (
+        <CommandItem
+          key={option.value}
+          disabled={isDisabled}
+          className={cn(isDisabled && "opacity-50 cursor-not-allowed")}
+          onSelect={() => {
+            if (isDisabled) return;
+            onChange(
+              isSelected
+                ? selected.filter((item) => item !== option.value)
+                : [...selected, option.value],
+            );
+          }}
+        >
+          <div
+            className={cn(
+              "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+              isSelected
+                ? "bg-slate-900 text-white"
+                : "opacity-50 [&_svg]:invisible",
+            )}
+          >
+            <Check className={cn("h-4 w-4")} />
+          </div>
+          {option.label}
+        </CommandItem>
+      );
+    });
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -67,7 +115,7 @@ export function MultiSelect({
               <span className="text-slate-400 truncate">{placeholder}</span>
             )}
             {selected.slice(0, maxCount).map((item) => {
-              const option = options.find((o) => o.value === item);
+              const option = allOptions.find((o) => o.value === item);
               return (
                 <Badge
                   key={item}
@@ -118,63 +166,40 @@ export function MultiSelect({
           <CommandInput placeholder="Cari..." />
           <CommandList>
             <CommandEmpty>Tidak ada hasil.</CommandEmpty>
-            <CommandGroup>
-              {!maxSelection && (
-                <CommandItem
-                  onSelect={() => {
-                    if (selected.length === options.length) {
-                      onChange([]);
-                    } else {
-                      onChange(options.map((o) => o.value));
-                    }
-                  }}
-                >
-                  <div
-                    className={cn(
-                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                      selected.length === options.length
-                        ? "bg-slate-900 text-white"
-                        : "opacity-50 [&_svg]:invisible",
-                    )}
-                  >
-                    <Check className={cn("h-4 w-4")} />
-                  </div>
-                  Pilih Semua
-                </CommandItem>
-              )}
-              {options.map((option) => {
-                const isSelected = selected.includes(option.value);
-                const isDisabled = !isSelected && maxSelection !== undefined && selected.length >= maxSelection;
-
-                return (
+            {groups ? (
+              groups.map((group) => (
+                <CommandGroup key={group.heading} heading={group.heading}>
+                  {renderItems(group.options)}
+                </CommandGroup>
+              ))
+            ) : (
+              <CommandGroup>
+                {!maxSelection && (
                   <CommandItem
-                    key={option.value}
-                    disabled={isDisabled}
-                    className={cn(isDisabled && "opacity-50 cursor-not-allowed")}
                     onSelect={() => {
-                      if (isDisabled) return;
-                      onChange(
-                        isSelected
-                          ? selected.filter((item) => item !== option.value)
-                          : [...selected, option.value],
-                      );
+                      if (selected.length === allOptions.length) {
+                        onChange([]);
+                      } else {
+                        onChange(allOptions.map((o) => o.value));
+                      }
                     }}
                   >
                     <div
                       className={cn(
                         "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                        isSelected
+                        selected.length === allOptions.length
                           ? "bg-slate-900 text-white"
                           : "opacity-50 [&_svg]:invisible",
                       )}
                     >
                       <Check className={cn("h-4 w-4")} />
                     </div>
-                    {option.label}
+                    Pilih Semua
                   </CommandItem>
-                );
-              })}
-            </CommandGroup>
+                )}
+                {renderItems(allOptions)}
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

@@ -362,6 +362,7 @@ export interface CandidateDetailResponse {
 
 export interface CandidateFilters {
   name?: string;
+  vacancy_name?: string;
   status_apply?: string;
   start_date?: string;
   end_date?: string;
@@ -383,6 +384,7 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
 
   // Add filters conditionally to avoid undefined values in the query string
   if (filters.name) params.name = filters.name;
+  if (filters.vacancy_name) params.vacancy_name = filters.vacancy_name;
   if (filters.status_apply) params.status_apply = filters.status_apply;
   if (filters.start_date) params.start_date = filters.start_date;
   if (filters.end_date) params.end_date = filters.end_date;
@@ -397,7 +399,7 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
 
   // Add dynamic filters
   Object.keys(filters).forEach((key) => {
-    if (!['name', 'status_apply', 'start_date', 'end_date', 'position_id', 'job_title_id', 'job_id', 'search', 'sort_by', 'sort_direction', 'page', 'per_page'].includes(key) && filters[key] !== undefined) {
+    if (!['name', 'vacancy_name', 'status_apply', 'start_date', 'end_date', 'position_id', 'job_title_id', 'job_id', 'search', 'sort_by', 'sort_direction', 'page', 'per_page'].includes(key) && filters[key] !== undefined) {
       params[key] = filters[key];
     }
   });

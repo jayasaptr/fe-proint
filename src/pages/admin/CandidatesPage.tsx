@@ -98,6 +98,7 @@ const CandidatesPage: React.FC = () => {
   // Filter UI states
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [vacancyName, setVacancyName] = useState("");
   const [statusApply, setStatusApply] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -105,6 +106,7 @@ const CandidatesPage: React.FC = () => {
   // Applied Filter states (for API)
   const [appliedFilters, setAppliedFilters] = useState({
     name: "",
+    vacancyName: "",
     statusApply: "",
     startDate: "",
     endDate: "",
@@ -117,6 +119,7 @@ const CandidatesPage: React.FC = () => {
   const handleApplyFilters = () => {
     setAppliedFilters({
       name: searchTerm,
+      vacancyName,
       statusApply,
       startDate,
       endDate,
@@ -125,11 +128,13 @@ const CandidatesPage: React.FC = () => {
 
   const handleResetFilters = () => {
     setSearchTerm("");
+    setVacancyName("");
     setStatusApply("");
     setStartDate("");
     setEndDate("");
     setAppliedFilters({
       name: "",
+      vacancyName: "",
       statusApply: "",
       startDate: "",
       endDate: "",
@@ -146,6 +151,7 @@ const CandidatesPage: React.FC = () => {
     queryKey: [
       "candidates",
       appliedFilters.name,
+      appliedFilters.vacancyName,
       page,
       appliedFilters.statusApply,
       appliedFilters.startDate,
@@ -154,6 +160,9 @@ const CandidatesPage: React.FC = () => {
     queryFn: () =>
       getCandidates({
         name: appliedFilters.name,
+        ...(appliedFilters.vacancyName && {
+          vacancy_name: appliedFilters.vacancyName,
+        }),
         page,
         ...(appliedFilters.statusApply &&
           appliedFilters.statusApply !== "all" && {
@@ -237,7 +246,7 @@ const CandidatesPage: React.FC = () => {
         {/* Filter Panel */}
         {showFilters && (
           <div className="w-full mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
               <div className="flex flex-col gap-2 md:col-span-1">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Search
@@ -253,6 +262,7 @@ const CandidatesPage: React.FC = () => {
                   />
                 </div>
               </div>
+         
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Status Apply
@@ -267,6 +277,21 @@ const CandidatesPage: React.FC = () => {
                     <SelectItem value="applied">Applied</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+                   <div className="flex flex-col gap-2 md:col-span-1">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Job Name
+                </label>
+                <div className="relative w-full group">
+                  <BriefcaseBusiness className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                  <Input
+                    placeholder="Search by job name..."
+                    className="pl-10 h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                    value={vacancyName}
+                    onChange={(e) => setVacancyName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
