@@ -6,7 +6,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import React, { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DHImg from "../assets/dh.png";
 import HeroImg from "../assets/job.jpg";
@@ -17,12 +17,6 @@ import {
   type PosAdtGrpHd,
   type Vacancy,
 } from "../lib/api/vacancies";
-
-const ApplyJobModal = lazy(() =>
-  import("../components/ApplyJobModal").then((m) => ({
-    default: m.ApplyJobModal,
-  })),
-);
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -270,18 +264,10 @@ const CareerPage: React.FC = () => {
       )}
 
       {applyingVacancy && (
-        <Suspense
-          fallback={
-            <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-              <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
-            </div>
-          }
-        >
-          <ApplyJobModal
-            vacancy={applyingVacancy}
-            onClose={() => setApplyingVacancy(null)}
-          />
-        </Suspense>
+        <DevelopmentNoticeModal
+          vacancy={applyingVacancy}
+          onClose={() => setApplyingVacancy(null)}
+        />
       )}
     </div>
   );
@@ -325,78 +311,61 @@ const FilterBar = ({
   onOptionChange,
   isLoadingCategories,
   isLoadingOptions,
-}: any) => {
-  // Bangun groups berdasarkan kategori yang dipilih user
-  const optionGroups = (selectedCategoryIds || [])
-    .map((typeId: number) => {
-      const cat = categories.find((c: any) => c.PosAdtTypeId === typeId);
-      if (!cat) return null;
-      return {
-        heading: cat.PosAdtName,
-        options: categoryOptions
-          .filter((o: any) => o.PosAdtTypeId === typeId)
-          .map((o: any) => ({
+}: any) => (
+  <Card className="p-2 md:p-1.5 mb-10 shadow-lg border-slate-100 rounded-2xl md:rounded-full bg-white w-full">
+    <div className="flex flex-col md:flex-row items-stretch md:items-center divide-y md:divide-y-0 md:divide-x divide-slate-100 md:divide-slate-200">
+      <div className="flex-[1.5] flex items-center px-4 py-1 md:py-0">
+        <Search className="text-slate-400 size-5 shrink-0" />
+        <Input
+          value={searchTerm}
+          onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onSearchSubmit();
+            }
+          }}
+          placeholder="Search for Job Posting"
+          className="border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 text-slate-700 bg-transparent h-12 px-3 w-full placeholder:text-slate-400 placeholder:font-normal text-sm md:text-base"
+        />
+      </div>
+      <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
+        <MultiSelect
+          options={categories.map((c: any) => ({
+            label: c.PosAdtName,
+            value: c.PosAdtTypeId.toString(),
+          }))}
+          selected={(selectedCategoryIds || []).map(String)}
+          onChange={onCategoryChange}
+          placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"}
+          disabled={isLoadingCategories}
+          maxSelection={2}
+        />
+      </div>
+      <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
+        <MultiSelect
+          options={categoryOptions.map((o: any) => ({
             label: o.PosAdtGrpName,
             value: o.PosAdtGrpId.toString(),
-          })),
-      };
-    })
-    .filter(Boolean);
-
-  return (
-    <Card className="p-2 md:p-1.5 mb-10 shadow-lg border-slate-100 rounded-2xl md:rounded-full bg-white w-full">
-      <div className="flex flex-col md:flex-row items-stretch md:items-center divide-y md:divide-y-0 md:divide-x divide-slate-100 md:divide-slate-200">
-        <div className="flex-[1.5] flex items-center px-4 py-1 md:py-0">
-          <Search className="text-slate-400 size-5 shrink-0" />
-          <Input
-            value={searchTerm}
-            onChange={(e) => onSearchChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                onSearchSubmit();
-              }
-            }}
-            placeholder="Search for Job Posting"
-            className="border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 text-slate-700 bg-transparent h-12 px-3 w-full placeholder:text-slate-400 placeholder:font-normal text-sm md:text-base"
-          />
-        </div>
-        <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
-          <MultiSelect
-            options={categories.map((c: any) => ({
-              label: c.PosAdtName,
-              value: c.PosAdtTypeId.toString(),
-            }))}
-            selected={(selectedCategoryIds || []).map(String)}
-            onChange={onCategoryChange}
-            placeholder={isLoadingCategories ? "Memuat..." : "Semua Kategori"}
-            disabled={isLoadingCategories}
-            maxSelection={2}
-          />
-        </div>
-        <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
-          <MultiSelect
-            groups={optionGroups.length > 0 ? optionGroups : undefined}
-            options={optionGroups.length === 0 ? [] : undefined}
-            selected={(selectedOptionIds || []).map(String)}
-            onChange={onOptionChange}
-            placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"}
-            disabled={!selectedCategoryIds || selectedCategoryIds.length === 0}
-            maxSelection={4}
-          />
-        </div>
-        <div className="px-3 md:px-0 md:pl-2 shrink-0 pt-3 md:pt-0 pb-1 md:pb-0">
-          <Button
-            type="button"
-            onClick={onSearchSubmit}
-            className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
-          >
-            Search
-          </Button>
-        </div>
+          }))}
+          selected={(selectedOptionIds || []).map(String)}
+          onChange={onOptionChange}
+          placeholder={isLoadingOptions ? "Memuat..." : "Semua Opsi"}
+          disabled={!selectedCategoryIds || selectedCategoryIds.length === 0}
+          maxSelection={2}
+        />
       </div>
-    </Card>
-  );
-};
+      <div className="px-3 md:px-0 md:pl-2 shrink-0 pt-3 md:pt-0 pb-1 md:pb-0">
+        <Button
+          type="button"
+          onClick={onSearchSubmit}
+          className="w-full md:w-32 h-12 rounded-xl md:rounded-full font-bold bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all text-sm md:text-base"
+        >
+          Search
+        </Button>
+      </div>
+    </div>
+  </Card>
+);
 
 const VacancyCard = ({
   vacancy,
@@ -635,6 +604,50 @@ const SkeletonLoader = () => (
     {[1, 2, 3].map((n) => (
       <Skeleton key={n} className="h-72 rounded-2xl bg-slate-200" />
     ))}
+  </div>
+);
+
+const DevelopmentNoticeModal = ({
+  vacancy,
+  onClose,
+}: {
+  vacancy: Vacancy;
+  onClose: () => void;
+}) => (
+  <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in">
+    <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+      <div className="bg-amber-50 border-b border-amber-100 px-6 py-5">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-600">
+          Pemberitahuan
+        </p>
+        <h3 className="mt-2 text-2xl font-bold text-slate-900">
+          Fitur Apply Job Masih Development
+        </h3>
+      </div>
+
+      <div className="px-6 py-5 space-y-3">
+        <p className="text-sm leading-relaxed text-slate-600">
+          Fitur apply job untuk lowongan{" "}
+          <span className="font-semibold text-slate-900">
+            {vacancy.VacantPositionName}
+          </span>{" "}
+          saat ini masih dalam proses development.
+        </p>
+        <p className="text-sm leading-relaxed text-slate-600">
+          Silakan coba kembali nanti. Untuk sementara, informasi lowongan masih
+          dapat dilihat seperti biasa.
+        </p>
+      </div>
+
+      <div className="px-6 pb-6 flex justify-end">
+        <Button
+          onClick={onClose}
+          className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800 px-6"
+        >
+          Mengerti
+        </Button>
+      </div>
+    </div>
   </div>
 );
 
