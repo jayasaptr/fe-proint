@@ -201,12 +201,13 @@ const CandidateDetailPage: React.FC = () => {
   const expectedSalaryFromQuestions = useMemo(() => {
     // Get first experience with questions
     const firstExperience = experiences?.[0];
-    if (!firstExperience?.questions || firstExperience.questions.length === 0) return null;
+    if (!firstExperience || !Array.isArray(firstExperience.questions) || firstExperience.questions.length === 0) return null;
 
     // Find question related to salary expectation (containing "ekspektasi")
-    const salaryQuestion = firstExperience.questions.find((q: any) =>
+    const questions = firstExperience.questions;
+    const salaryQuestion = questions.find((q: any) =>
       q.question?.QuestName?.toLowerCase().includes("ekspektasi"),
-    ) || firstExperience.questions[firstExperience.questions.length - 1];
+    ) || questions[questions.length - 1];
 
     if (!salaryQuestion) return null;
 
@@ -420,7 +421,7 @@ const CandidateDetailPage: React.FC = () => {
                 <InfoRow
                   label="Expected Salary"
                   value={formatCurrency(
-                    expectedSalaryFromQuestions ?? candidate.experiences?.[0]?.ExpSalary ?? candidate.CanSalaryExpectation
+                    expectedSalaryFromQuestions ?? candidate.experiences?.[0]?.ExpSalary ?? candidate.CanExpSal
                   )}
                   highlight
                 />

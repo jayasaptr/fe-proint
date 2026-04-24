@@ -126,6 +126,7 @@ export interface CandidateExperience {
   UpdDate?: string;
   UpdUser?: string;
   UpdFlag?: string;
+  questions?: any[];
 }
 
 export interface CandidateIdentity {
