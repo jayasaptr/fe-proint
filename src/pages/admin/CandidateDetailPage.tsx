@@ -198,6 +198,22 @@ const CandidateDetailPage: React.FC = () => {
       : `data:image/jpeg;base64,${rawPhoto}`;
   }, [candidate?.photos]);
 
+  const expectedSalaryFromQuestions = useMemo(() => {
+    // Get first experience with questions
+    const firstExperience = experiences?.[0];
+    if (!firstExperience?.questions || firstExperience.questions.length === 0) return null;
+
+    // Find question related to salary expectation (containing "ekspektasi")
+    const salaryQuestion = firstExperience.questions.find((q: any) =>
+      q.question?.QuestName?.toLowerCase().includes("ekspektasi"),
+    ) || firstExperience.questions[firstExperience.questions.length - 1];
+
+    if (!salaryQuestion) return null;
+
+    // Return numeric value if available, otherwise text answer
+    return salaryQuestion.QAnsNumeric || salaryQuestion.QuestAnswer || null;
+  }, [experiences]);
+
   useEffect(() => setIsPhotoError(false), [photoSource]);
 
   const handleDownloadDocument = async (
@@ -403,7 +419,9 @@ const CandidateDetailPage: React.FC = () => {
                 />
                 <InfoRow
                   label="Expected Salary"
-                  value={formatCurrency(candidate.CanExpSal)}
+                  value={formatCurrency(
+                    expectedSalaryFromQuestions ?? candidate.experiences?.[0]?.ExpSalary ?? candidate.CanSalaryExpectation
+                  )}
                   highlight
                 />
               </div>
