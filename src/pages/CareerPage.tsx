@@ -1,6 +1,5 @@
 import {
   Calendar,
-  Car,
   ChevronLeft,
   ChevronRight,
   MapPin,
