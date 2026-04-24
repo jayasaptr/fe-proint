@@ -2,6 +2,14 @@ import { TablePagination } from "@/components/TablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -20,6 +28,7 @@ import {
   postApplyToSqlServer,
   type Candidate,
 } from "@/lib/api/candidates";
+import api from "@/lib/axios";
 import { cn } from "@/lib/utils";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -28,6 +37,8 @@ import {
   Award,
   BriefcaseBusiness,
   Calendar as CalendarIcon,
+  Check,
+  ChevronsUpDown,
   Download,
   Eye,
   Filter,
@@ -89,32 +100,110 @@ const getPrimaryExpectedJob = (candidate: Candidate) => {
   );
   return priorityJob || candidate.job_expected[0];
 };
+// --- Session Storage Helper ---
+const getSessionState = (key: string, defaultValue: any) => {
+  try {
+    const saved = sessionStorage.getItem(key);
+    if (saved !== null) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error("Error reading sessionStorage", e);
+  }
+  return defaultValue;
+};
 
 // --- Main Page Component ---
 const CandidatesPage: React.FC = () => {
   const navigate = useNavigate();
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState<number>(() =>
+    getSessionState("candidates_page", 1),
+  );
 
   // Filter UI states
-  const [showFilters, setShowFilters] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [vacancyName, setVacancyName] = useState("");
-  const [statusApply, setStatusApply] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [showFilters, setShowFilters] = useState<boolean>(() =>
+    getSessionState("candidates_showFilters", false),
+  );
+  const [searchTerm, setSearchTerm] = useState<string>(() =>
+    getSessionState("candidates_searchTerm", ""),
+  );
+  const [vacancyName, setVacancyName] = useState<string>(() =>
+    getSessionState("candidates_vacancyName", ""),
+  );
+  const [statusApply, setStatusApply] = useState<string>(() =>
+    getSessionState("candidates_statusApply", ""),
+  );
+  const [startDate, setStartDate] = useState<string>(() =>
+    getSessionState("candidates_startDate", ""),
+  );
+  const [endDate, setEndDate] = useState<string>(() =>
+    getSessionState("candidates_endDate", ""),
+  );
+  const [province, setProvince] = useState<string>(() =>
+    getSessionState("candidates_province", ""),
+  );
+  const [openProvince, setOpenProvince] = useState(false);
+  const [eduLevel, setEduLevel] = useState<string>(() =>
+    getSessionState("candidates_eduLevel", ""),
+  );
+  const [openEduLevel, setOpenEduLevel] = useState(false);
+  const [gender, setGender] = useState<string>(() =>
+    getSessionState("candidates_gender", ""),
+  );
 
   // Applied Filter states (for API)
-  const [appliedFilters, setAppliedFilters] = useState({
+  const defaultAppliedFilters = {
     name: "",
     vacancyName: "",
     statusApply: "",
     startDate: "",
     endDate: "",
-  });
+    province: "",
+    eduLevel: "",
+    gender: "",
+  };
+  const [appliedFilters, setAppliedFilters] = useState(() =>
+    getSessionState("candidates_appliedFilters", defaultAppliedFilters),
+  );
 
+  // Persist states to sessionStorage
   useEffect(() => {
-    setPage(1);
-  }, [appliedFilters]);
+    sessionStorage.setItem("candidates_page", JSON.stringify(page));
+    sessionStorage.setItem(
+      "candidates_showFilters",
+      JSON.stringify(showFilters),
+    );
+    sessionStorage.setItem("candidates_searchTerm", JSON.stringify(searchTerm));
+    sessionStorage.setItem(
+      "candidates_vacancyName",
+      JSON.stringify(vacancyName),
+    );
+    sessionStorage.setItem(
+      "candidates_statusApply",
+      JSON.stringify(statusApply),
+    );
+    sessionStorage.setItem("candidates_startDate", JSON.stringify(startDate));
+    sessionStorage.setItem("candidates_endDate", JSON.stringify(endDate));
+    sessionStorage.setItem("candidates_province", JSON.stringify(province));
+    sessionStorage.setItem("candidates_eduLevel", JSON.stringify(eduLevel));
+    sessionStorage.setItem("candidates_gender", JSON.stringify(gender));
+    sessionStorage.setItem(
+      "candidates_appliedFilters",
+      JSON.stringify(appliedFilters),
+    );
+  }, [
+    page,
+    showFilters,
+    searchTerm,
+    vacancyName,
+    statusApply,
+    startDate,
+    endDate,
+    province,
+    eduLevel,
+    gender,
+    appliedFilters,
+  ]);
 
   const handleApplyFilters = () => {
     setAppliedFilters({
@@ -123,7 +212,11 @@ const CandidatesPage: React.FC = () => {
       statusApply,
       startDate,
       endDate,
+      province,
+      eduLevel,
+      gender,
     });
+    setPage(1);
   };
 
   const handleResetFilters = () => {
@@ -132,14 +225,36 @@ const CandidatesPage: React.FC = () => {
     setStatusApply("");
     setStartDate("");
     setEndDate("");
-    setAppliedFilters({
-      name: "",
-      vacancyName: "",
-      statusApply: "",
-      startDate: "",
-      endDate: "",
-    });
+    setProvince("");
+    setEduLevel("");
+    setGender("");
+    setAppliedFilters(defaultAppliedFilters);
+    setPage(1);
   };
+
+  const { data: statesResponse } = useQuery({
+    queryKey: ["states"],
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_URL;
+      const res = await api.get(`${baseUrl}/states`, {
+        params: { per_page: 200 },
+      });
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: eduLevelsResponse } = useQuery({
+    queryKey: ["edulevels"],
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_URL;
+      const res = await api.get(`${baseUrl}/edulevels`, {
+        params: { per_page: 200 },
+      });
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const {
     data: candidatesResponse,
@@ -156,6 +271,9 @@ const CandidatesPage: React.FC = () => {
       appliedFilters.statusApply,
       appliedFilters.startDate,
       appliedFilters.endDate,
+      appliedFilters.province,
+      appliedFilters.eduLevel,
+      appliedFilters.gender,
     ],
     queryFn: () =>
       getCandidates({
@@ -172,6 +290,18 @@ const CandidatesPage: React.FC = () => {
           start_date: appliedFilters.startDate,
         }),
         ...(appliedFilters.endDate && { end_date: appliedFilters.endDate }),
+        ...(appliedFilters.province &&
+          appliedFilters.province !== "all" && {
+            CanOriStateName: appliedFilters.province,
+          }),
+        ...(appliedFilters.eduLevel &&
+          appliedFilters.eduLevel !== "all" && {
+            EduLevel: appliedFilters.eduLevel,
+          }),
+        ...(appliedFilters.gender &&
+          appliedFilters.gender !== "all" && {
+            CanSex: appliedFilters.gender,
+          }),
       }),
     placeholderData: keepPreviousData,
     refetchOnMount: "always",
@@ -246,7 +376,8 @@ const CandidatesPage: React.FC = () => {
         {/* Filter Panel */}
         {showFilters && (
           <div className="w-full mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
+              {/* Row 1 */}
               <div className="flex flex-col gap-2 md:col-span-1">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Search
@@ -262,7 +393,7 @@ const CandidatesPage: React.FC = () => {
                   />
                 </div>
               </div>
-         
+
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Status Apply
@@ -278,7 +409,8 @@ const CandidatesPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
-                   <div className="flex flex-col gap-2 md:col-span-1">
+
+              <div className="flex flex-col gap-2 md:col-span-1">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Job Name
                 </label>
@@ -293,6 +425,167 @@ const CandidatesPage: React.FC = () => {
                   />
                 </div>
               </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Province
+                </label>
+                <Popover open={openProvince} onOpenChange={setOpenProvince}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openProvince}
+                      className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full justify-between transition-all focus:ring-2 focus:ring-orange-500/20 font-normal"
+                    >
+                      <span className="truncate">
+                        {province && province !== "all"
+                          ? province
+                          : "All Province"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search province..." />
+                      <CommandList>
+                        <CommandEmpty>No province found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="all"
+                            onSelect={() => {
+                              setProvince("all");
+                              setOpenProvince(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                province === "all" || !province
+                                  ? "opacity-100"
+                                  : "opacity-0",
+                              )}
+                            />
+                            All Province
+                          </CommandItem>
+                          {statesResponse?.data?.map((state: any) => (
+                            <CommandItem
+                              key={state.StateId}
+                              value={state.StateName}
+                              onSelect={() => {
+                                setProvince(state.StateName);
+                                setOpenProvince(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  province === state.StateName
+                                    ? "opacity-100"
+                                    : "opacity-0",
+                                )}
+                              />
+                              {state.StateName}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Row 2 */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Education Level
+                </label>
+                <Popover open={openEduLevel} onOpenChange={setOpenEduLevel}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openEduLevel}
+                      className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full justify-between transition-all focus:ring-2 focus:ring-orange-500/20 font-normal"
+                    >
+                      <span className="truncate">
+                        {eduLevel && eduLevel !== "all"
+                          ? eduLevelsResponse?.data?.find(
+                              (e: any) =>
+                                String(e.EduLvlId) === String(eduLevel),
+                            )?.EduLvlName || "All Education"
+                          : "All Education"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search education..." />
+                      <CommandList>
+                        <CommandEmpty>No education found.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="all"
+                            onSelect={() => {
+                              setEduLevel("all");
+                              setOpenEduLevel(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                eduLevel === "all" || !eduLevel
+                                  ? "opacity-100"
+                                  : "opacity-0",
+                              )}
+                            />
+                            All Education
+                          </CommandItem>
+                          {eduLevelsResponse?.data?.map((edu: any) => (
+                            <CommandItem
+                              key={edu.EduLvlId}
+                              value={edu.EduLvlName}
+                              onSelect={() => {
+                                setEduLevel(String(edu.EduLvlId));
+                                setOpenEduLevel(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  eduLevel === String(edu.EduLvlId)
+                                    ? "opacity-100"
+                                    : "opacity-0",
+                                )}
+                              />
+                              {edu.EduLvlName}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Gender
+                </label>
+                <Select value={gender} onValueChange={setGender}>
+                  <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                    <SelectValue placeholder="All Gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Gender</SelectItem>
+                    <SelectItem value="M">Laki - laki (M)</SelectItem>
+                    <SelectItem value="F">Perempuan (F)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Start Date
@@ -332,6 +625,7 @@ const CandidatesPage: React.FC = () => {
                   </Popover>
                 </div>
               </div>
+
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   End Date
