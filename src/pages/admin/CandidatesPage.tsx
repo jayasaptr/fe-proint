@@ -2,15 +2,9 @@ import { TablePagination } from "@/components/TablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { MultiSelect } from "@/components/ui/multi-select";
 import {
   Popover,
   PopoverContent,
@@ -24,8 +18,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   getCandidates,
   postApplyToSqlServer,
+  toggleCandidateChecklist,
   type Candidate,
 } from "@/lib/api/candidates";
 import api from "@/lib/axios";
@@ -37,8 +38,6 @@ import {
   Award,
   BriefcaseBusiness,
   Calendar as CalendarIcon,
-  Check,
-  ChevronsUpDown,
   Download,
   Eye,
   Filter,
@@ -139,14 +138,12 @@ const CandidatesPage: React.FC = () => {
   const [endDate, setEndDate] = useState<string>(() =>
     getSessionState("candidates_endDate", ""),
   );
-  const [province, setProvince] = useState<string>(() =>
-    getSessionState("candidates_province", ""),
+  const [province, setProvince] = useState<string[]>(() =>
+    getSessionState("candidates_province", []),
   );
-  const [openProvince, setOpenProvince] = useState(false);
-  const [eduLevel, setEduLevel] = useState<string>(() =>
-    getSessionState("candidates_eduLevel", ""),
+  const [eduLevel, setEduLevel] = useState<string[]>(() =>
+    getSessionState("candidates_eduLevel", []),
   );
-  const [openEduLevel, setOpenEduLevel] = useState(false);
   const [gender, setGender] = useState<string>(() =>
     getSessionState("candidates_gender", ""),
   );
@@ -158,8 +155,8 @@ const CandidatesPage: React.FC = () => {
     statusApply: "",
     startDate: "",
     endDate: "",
-    province: "",
-    eduLevel: "",
+    province: [] as string[],
+    eduLevel: [] as string[],
     gender: "",
   };
   const [appliedFilters, setAppliedFilters] = useState(() =>
@@ -225,8 +222,8 @@ const CandidatesPage: React.FC = () => {
     setStatusApply("");
     setStartDate("");
     setEndDate("");
-    setProvince("");
-    setEduLevel("");
+    setProvince([]);
+    setEduLevel([]);
     setGender("");
     setAppliedFilters(defaultAppliedFilters);
     setPage(1);
@@ -291,11 +288,11 @@ const CandidatesPage: React.FC = () => {
         }),
         ...(appliedFilters.endDate && { end_date: appliedFilters.endDate }),
         ...(appliedFilters.province &&
-          appliedFilters.province !== "all" && {
+          appliedFilters.province.length > 0 && {
             CanOriStateName: appliedFilters.province,
           }),
         ...(appliedFilters.eduLevel &&
-          appliedFilters.eduLevel !== "all" && {
+          appliedFilters.eduLevel.length > 0 && {
             EduLevel: appliedFilters.eduLevel,
           }),
         ...(appliedFilters.gender &&
@@ -329,6 +326,27 @@ const CandidatesPage: React.FC = () => {
   const [loadingApply, setLoadingApply] = useState<{
     [canId: number]: boolean;
   }>({});
+
+  const [loadingChecklist, setLoadingChecklist] = useState<{
+    [canId: number]: boolean;
+  }>({});
+
+  const handleToggleChecklist = async (canId: number) => {
+    setLoadingChecklist((prev) => ({ ...prev, [canId]: true }));
+    try {
+      const res = await toggleCandidateChecklist(canId);
+      if (res.success) {
+        toast.success(res.message);
+        refetch();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Failed to update checklist");
+    } finally {
+      setLoadingChecklist((prev) => ({ ...prev, [canId]: false }));
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950 animate-in fade-in duration-700 p-4 sm:p-6 pb-12 gap-6">
@@ -430,70 +448,19 @@ const CandidatesPage: React.FC = () => {
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Province
                 </label>
-                <Popover open={openProvince} onOpenChange={setOpenProvince}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={openProvince}
-                      className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full justify-between transition-all focus:ring-2 focus:ring-orange-500/20 font-normal"
-                    >
-                      <span className="truncate">
-                        {province && province !== "all"
-                          ? province
-                          : "All Province"}
-                      </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[300px] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search province..." />
-                      <CommandList>
-                        <CommandEmpty>No province found.</CommandEmpty>
-                        <CommandGroup>
-                          <CommandItem
-                            value="all"
-                            onSelect={() => {
-                              setProvince("all");
-                              setOpenProvince(false);
-                            }}
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                province === "all" || !province
-                                  ? "opacity-100"
-                                  : "opacity-0",
-                              )}
-                            />
-                            All Province
-                          </CommandItem>
-                          {statesResponse?.data?.map((state: any) => (
-                            <CommandItem
-                              key={state.StateId}
-                              value={state.StateName}
-                              onSelect={() => {
-                                setProvince(state.StateName);
-                                setOpenProvince(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  province === state.StateName
-                                    ? "opacity-100"
-                                    : "opacity-0",
-                                )}
-                              />
-                              {state.StateName}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <MultiSelect
+                  options={
+                    statesResponse?.data?.map((state: any) => ({
+                      label: state.StateName,
+                      value: state.StateName,
+                    })) || []
+                  }
+                  selected={province}
+                  onChange={setProvince}
+                  placeholder="All Province"
+                  className="w-full transition-all"
+                  maxCount={1}
+                />
               </div>
 
               {/* Row 2 */}
@@ -501,73 +468,19 @@ const CandidatesPage: React.FC = () => {
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Education Level
                 </label>
-                <Popover open={openEduLevel} onOpenChange={setOpenEduLevel}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={openEduLevel}
-                      className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full justify-between transition-all focus:ring-2 focus:ring-orange-500/20 font-normal"
-                    >
-                      <span className="truncate">
-                        {eduLevel && eduLevel !== "all"
-                          ? eduLevelsResponse?.data?.find(
-                              (e: any) =>
-                                String(e.EduLvlId) === String(eduLevel),
-                            )?.EduLvlName || "All Education"
-                          : "All Education"}
-                      </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[300px] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search education..." />
-                      <CommandList>
-                        <CommandEmpty>No education found.</CommandEmpty>
-                        <CommandGroup>
-                          <CommandItem
-                            value="all"
-                            onSelect={() => {
-                              setEduLevel("all");
-                              setOpenEduLevel(false);
-                            }}
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                eduLevel === "all" || !eduLevel
-                                  ? "opacity-100"
-                                  : "opacity-0",
-                              )}
-                            />
-                            All Education
-                          </CommandItem>
-                          {eduLevelsResponse?.data?.map((edu: any) => (
-                            <CommandItem
-                              key={edu.EduLvlId}
-                              value={edu.EduLvlName}
-                              onSelect={() => {
-                                setEduLevel(String(edu.EduLvlId));
-                                setOpenEduLevel(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  eduLevel === String(edu.EduLvlId)
-                                    ? "opacity-100"
-                                    : "opacity-0",
-                                )}
-                              />
-                              {edu.EduLvlName}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <MultiSelect
+                  options={
+                    eduLevelsResponse?.data?.map((edu: any) => ({
+                      label: edu.EduLvlName,
+                      value: String(edu.EduLvlId),
+                    })) || []
+                  }
+                  selected={eduLevel}
+                  onChange={setEduLevel}
+                  placeholder="All Education"
+                  className="w-full transition-all"
+                  maxCount={1}
+                />
               </div>
 
               <div className="flex flex-col gap-2">
@@ -698,6 +611,7 @@ const CandidatesPage: React.FC = () => {
                 <th className="px-6 py-4">Education Background</th>
                 <th className="px-6 py-4">Applied Job</th>
                 <th className="px-6 py-4">Status Apply</th>
+                <th className="px-6 py-4">Checked</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -855,6 +769,54 @@ const CandidatesPage: React.FC = () => {
                         >
                           {candidate.status_apply || "local"}
                         </Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={candidate.is_checked}
+                                  onCheckedChange={() =>
+                                    handleToggleChecklist(candidate.CanId)
+                                  }
+                                  disabled={loadingChecklist[candidate.CanId]}
+                                  className={cn(
+                                    "h-5 w-5 rounded-md border-slate-300 dark:border-slate-600 data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500",
+                                    loadingChecklist[candidate.CanId] &&
+                                      "opacity-50 cursor-not-allowed",
+                                  )}
+                                />
+                                {candidate.is_checked && (
+                                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                    Done
+                                  </span>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            {candidate.is_checked && (
+                              <TooltipContent className="bg-slate-900 text-white border-slate-800 p-2 text-xs">
+                                <div className="flex flex-col gap-1">
+                                  <p className="font-semibold text-orange-400">
+                                    Checked by:
+                                  </p>
+                                  <p>{candidate.checked_by || "-"}</p>
+                                  <p className="font-semibold text-orange-400 mt-1">
+                                    At:
+                                  </p>
+                                  <p>
+                                    {candidate.checked_at
+                                      ? format(
+                                          new Date(candidate.checked_at),
+                                          "PPP p",
+                                        )
+                                      : "-"}
+                                  </p>
+                                </div>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
                       </td>
                       <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button

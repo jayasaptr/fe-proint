@@ -106,13 +106,15 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "w-full justify-between hover:bg-transparent font-normal border-0 shadow-none px-3 h-12",
+            "flex w-full h-10 items-center justify-between gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm shadow-sm transition-all outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}
         >
           <div className="flex flex-1 items-center gap-1.5 min-w-0 overflow-hidden">
             {selected.length === 0 && (
-              <span className="text-slate-400 truncate">{placeholder}</span>
+              <span className="text-slate-500 dark:text-slate-400 truncate font-normal">
+                {placeholder}
+              </span>
             )}
             {selected.slice(0, maxCount).map((item) => {
               const option = allOptions.find((o) => o.value === item);
@@ -120,31 +122,24 @@ export function MultiSelect({
                 <Badge
                   key={item}
                   variant="secondary"
-                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium px-2 py-0.5 h-7 flex items-center shrink-0 max-w-[120px] md:max-w-[180px]"
+                  className="bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 font-medium px-2 py-0.5 h-6 flex items-center shrink-0 max-w-[120px]"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleUnselect(item);
                   }}
                 >
-                  <span className="truncate max-w-[80px]">{option?.label}</span>
+                  <span className="truncate">{option?.label}</span>
                   <div
                     role="button"
                     tabIndex={0}
-                    className="ml-1 ring-offset-background rounded-full outline-hidden cursor-pointer"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleUnselect(item);
-                      }
-                    }}
+                    className="ml-1 rounded-full outline-none cursor-pointer"
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleUnselect(item);
                     }}
                   >
-                     <X className="h-3 w-3 text-slate-500 hover:text-slate-800" />
+                    <X className="h-3 w-3 text-slate-500 hover:text-slate-800 dark:text-slate-400" />
                   </div>
                 </Badge>
               );
@@ -152,13 +147,13 @@ export function MultiSelect({
             {selected.length > maxCount && (
               <Badge
                 variant="secondary"
-                className="bg-slate-100 text-slate-700 font-medium px-2 py-0.5 h-7 flex items-center shrink-0"
+                className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-medium px-2 py-0.5 h-6 flex items-center shrink-0"
               >
                 +{selected.length - maxCount}
               </Badge>
             )}
           </div>
-          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50 text-slate-500" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">

@@ -337,6 +337,9 @@ export interface Candidate {
   skills?: CandidateSkill[];
   languages?: CandidateLanguage[];
   photos?: CandidatePhoto[];
+  is_checked?: boolean;
+  checked_at?: string | null;
+  checked_by?: string | null;
 }
 
 export interface CandidatePaginationData {
@@ -375,33 +378,69 @@ export interface CandidateFilters {
   sort_direction?: string;
   page?: number;
   per_page?: number;
+  EduLevel?: string | number | (string | number)[];
+  CanOriStateName?: string | string[];
   [key: string]: any; // Allow dynamic column filters
 }
 
 const localApiBaseUrl = import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
 
 export const getCandidates = async (filters: CandidateFilters = {}): Promise<CandidatesResponse> => {
-  const params: Record<string, string | number> = {};
+  const params: Record<string, any> = {};
 
-  // Add filters conditionally to avoid undefined values in the query string
-  if (filters.name) params.name = filters.name;
-  if (filters.vacancy_name) params.vacancy_name = filters.vacancy_name;
-  if (filters.status_apply) params.status_apply = filters.status_apply;
-  if (filters.start_date) params.start_date = filters.start_date;
-  if (filters.end_date) params.end_date = filters.end_date;
-  if (filters.position_id) params.position_id = filters.position_id;
-  if (filters.job_title_id) params.job_title_id = filters.job_title_id;
-  if (filters.job_id) params.job_id = filters.job_id;
-  if (filters.search) params.search = filters.search;
-  if (filters.sort_by) params.sort_by = filters.sort_by;
-  if (filters.sort_direction) params.sort_direction = filters.sort_direction;
-  if (filters.page) params.page = filters.page;
-  if (filters.per_page) params.per_page = filters.per_page;
+  // Helper function to add parameters, handling arrays with [] notation
+  const addParam = (key: string, value: any) => {
+    if (value === undefined || value === null || value === "") return;
+    if (Array.isArray(value)) {
+      if (value.length > 0) {
+        params[`${key}[]`] = value;
+      }
+    } else if (value !== "all") {
+      params[key] = value;
+    }
+  };
+
+  // Add standard filters
+  if (filters.name) addParam("name", filters.name);
+  if (filters.vacancy_name) addParam("vacancy_name", filters.vacancy_name);
+  if (filters.status_apply) addParam("status_apply", filters.status_apply);
+  if (filters.start_date) addParam("start_date", filters.start_date);
+  if (filters.end_date) addParam("end_date", filters.end_date);
+  if (filters.position_id) addParam("position_id", filters.position_id);
+  if (filters.job_title_id) addParam("job_title_id", filters.job_title_id);
+  if (filters.job_id) addParam("job_id", filters.job_id);
+  if (filters.search) addParam("search", filters.search);
+  if (filters.sort_by) addParam("sort_by", filters.sort_by);
+  if (filters.sort_direction) addParam("sort_direction", filters.sort_direction);
+  if (filters.page) addParam("page", filters.page);
+  if (filters.per_page) addParam("per_page", filters.per_page);
+  
+  // Multi-value filters
+  if (filters.EduLevel) addParam("EduLevel", filters.EduLevel);
+  if (filters.CanOriStateName) addParam("CanOriStateName", filters.CanOriStateName);
 
   // Add dynamic filters
+  const standardKeys = [
+    "name",
+    "vacancy_name",
+    "status_apply",
+    "start_date",
+    "end_date",
+    "position_id",
+    "job_title_id",
+    "job_id",
+    "search",
+    "sort_by",
+    "sort_direction",
+    "page",
+    "per_page",
+    "EduLevel",
+    "CanOriStateName",
+  ];
+
   Object.keys(filters).forEach((key) => {
-    if (!['name', 'vacancy_name', 'status_apply', 'start_date', 'end_date', 'position_id', 'job_title_id', 'job_id', 'search', 'sort_by', 'sort_direction', 'page', 'per_page'].includes(key) && filters[key] !== undefined) {
-      params[key] = filters[key];
+    if (!standardKeys.includes(key) && filters[key] !== undefined) {
+      addParam(key, filters[key]);
     }
   });
 
@@ -422,6 +461,20 @@ export const downloadCandidateDocument = async (canId: string | number, canDocId
     responseType: 'blob',
   });
 
+  return response.data;
+};
+
+export const toggleCandidateChecklist = async (canId: string | number): Promise<{
+  success: boolean;
+  message: string;
+  data: {
+    CanId: number;
+    is_checked: boolean;
+    checked_at: string | null;
+    checked_by: string | null;
+  };
+}> => {
+  const response = await api.post(`${localApiBaseUrl}/candidates/${canId}/toggle-checklist`);
   return response.data;
 };
 
