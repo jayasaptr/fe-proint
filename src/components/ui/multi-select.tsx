@@ -52,6 +52,7 @@ export function MultiSelect({
   maxSelection,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
+  const safeSelected = Array.isArray(selected) ? selected : [];
 
   // Flatten semua opsi untuk badge rendering
   const allOptions: Option[] = groups
@@ -59,16 +60,16 @@ export function MultiSelect({
     : optionsProp;
 
   const handleUnselect = (item: string) => {
-    onChange(selected.filter((i) => i !== item));
+    onChange(safeSelected.filter((i) => i !== item));
   };
 
   const renderItems = (opts: Option[]) =>
     opts.map((option) => {
-      const isSelected = selected.includes(option.value);
+      const isSelected = safeSelected.includes(option.value);
       const isDisabled =
         !isSelected &&
         maxSelection !== undefined &&
-        selected.length >= maxSelection;
+        safeSelected.length >= maxSelection;
       return (
         <CommandItem
           key={option.value}
@@ -78,8 +79,8 @@ export function MultiSelect({
             if (isDisabled) return;
             onChange(
               isSelected
-                ? selected.filter((item) => item !== option.value)
-                : [...selected, option.value],
+                ? safeSelected.filter((item) => item !== option.value)
+                : [...safeSelected, option.value],
             );
           }}
         >
@@ -111,12 +112,12 @@ export function MultiSelect({
           )}
         >
           <div className="flex flex-1 items-center gap-1.5 min-w-0 overflow-hidden">
-            {selected.length === 0 && (
+            {safeSelected.length === 0 && (
               <span className="text-slate-500 dark:text-slate-400 truncate font-normal">
                 {placeholder}
               </span>
             )}
-            {selected.slice(0, maxCount).map((item) => {
+            {safeSelected.slice(0, maxCount).map((item) => {
               const option = allOptions.find((o) => o.value === item);
               return (
                 <Badge
@@ -144,12 +145,12 @@ export function MultiSelect({
                 </Badge>
               );
             })}
-            {selected.length > maxCount && (
+            {safeSelected.length > maxCount && (
               <Badge
                 variant="secondary"
                 className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-medium px-2 py-0.5 h-6 flex items-center shrink-0"
               >
-                +{selected.length - maxCount}
+                +{safeSelected.length - maxCount}
               </Badge>
             )}
           </div>
@@ -172,7 +173,7 @@ export function MultiSelect({
                 {!maxSelection && (
                   <CommandItem
                     onSelect={() => {
-                      if (selected.length === allOptions.length) {
+                      if (safeSelected.length === allOptions.length) {
                         onChange([]);
                       } else {
                         onChange(allOptions.map((o) => o.value));
@@ -182,7 +183,7 @@ export function MultiSelect({
                     <div
                       className={cn(
                         "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
-                        selected.length === allOptions.length
+                        safeSelected.length === allOptions.length
                           ? "bg-slate-900 text-white"
                           : "opacity-50 [&_svg]:invisible",
                       )}

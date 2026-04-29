@@ -138,14 +138,23 @@ const CandidatesPage: React.FC = () => {
   const [endDate, setEndDate] = useState<string>(() =>
     getSessionState("candidates_endDate", ""),
   );
-  const [province, setProvince] = useState<string[]>(() =>
-    getSessionState("candidates_province", []),
-  );
-  const [eduLevel, setEduLevel] = useState<string[]>(() =>
-    getSessionState("candidates_eduLevel", []),
-  );
+  const [province, setProvince] = useState<string[]>(() => {
+    const val = getSessionState("candidates_province", []);
+    return Array.isArray(val) ? val : [];
+  });
+  const [eduLevel, setEduLevel] = useState<string[]>(() => {
+    const val = getSessionState("candidates_eduLevel", []);
+    return Array.isArray(val) ? val : [];
+  });
+  const [eduMajor, setEduMajor] = useState<string[]>(() => {
+    const val = getSessionState("candidates_eduMajor", []);
+    return Array.isArray(val) ? val : [];
+  });
   const [gender, setGender] = useState<string>(() =>
     getSessionState("candidates_gender", ""),
+  );
+  const [isChecked, setIsChecked] = useState<string>(() =>
+    getSessionState("candidates_isChecked", ""),
   );
 
   // Applied Filter states (for API)
@@ -157,11 +166,20 @@ const CandidatesPage: React.FC = () => {
     endDate: "",
     province: [] as string[],
     eduLevel: [] as string[],
+    eduMajor: [] as string[],
     gender: "",
+    isChecked: "",
   };
-  const [appliedFilters, setAppliedFilters] = useState(() =>
-    getSessionState("candidates_appliedFilters", defaultAppliedFilters),
-  );
+  const [appliedFilters, setAppliedFilters] = useState(() => {
+    const val = getSessionState("candidates_appliedFilters", defaultAppliedFilters);
+    return {
+      ...defaultAppliedFilters,
+      ...val,
+      province: Array.isArray(val?.province) ? val.province : [],
+      eduLevel: Array.isArray(val?.eduLevel) ? val.eduLevel : [],
+      eduMajor: Array.isArray(val?.eduMajor) ? val.eduMajor : [],
+    };
+  });
 
   // Persist states to sessionStorage
   useEffect(() => {
@@ -183,7 +201,9 @@ const CandidatesPage: React.FC = () => {
     sessionStorage.setItem("candidates_endDate", JSON.stringify(endDate));
     sessionStorage.setItem("candidates_province", JSON.stringify(province));
     sessionStorage.setItem("candidates_eduLevel", JSON.stringify(eduLevel));
+    sessionStorage.setItem("candidates_eduMajor", JSON.stringify(eduMajor));
     sessionStorage.setItem("candidates_gender", JSON.stringify(gender));
+    sessionStorage.setItem("candidates_isChecked", JSON.stringify(isChecked));
     sessionStorage.setItem(
       "candidates_appliedFilters",
       JSON.stringify(appliedFilters),
@@ -198,7 +218,9 @@ const CandidatesPage: React.FC = () => {
     endDate,
     province,
     eduLevel,
+    eduMajor,
     gender,
+    isChecked,
     appliedFilters,
   ]);
 
@@ -211,7 +233,9 @@ const CandidatesPage: React.FC = () => {
       endDate,
       province,
       eduLevel,
+      eduMajor,
       gender,
+      isChecked,
     });
     setPage(1);
   };
@@ -224,7 +248,9 @@ const CandidatesPage: React.FC = () => {
     setEndDate("");
     setProvince([]);
     setEduLevel([]);
+    setEduMajor([]);
     setGender("");
+    setIsChecked("");
     setAppliedFilters(defaultAppliedFilters);
     setPage(1);
   };
@@ -253,6 +279,18 @@ const CandidatesPage: React.FC = () => {
     staleTime: 5 * 60 * 1000,
   });
 
+  const { data: eduMajorsResponse } = useQuery({
+    queryKey: ["edumajors"],
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_URL;
+      const res = await api.get(`${baseUrl}/edumajors`, {
+        params: { per_page: 200 },
+      });
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const {
     data: candidatesResponse,
     isLoading,
@@ -270,7 +308,9 @@ const CandidatesPage: React.FC = () => {
       appliedFilters.endDate,
       appliedFilters.province,
       appliedFilters.eduLevel,
+      appliedFilters.eduMajor,
       appliedFilters.gender,
+      appliedFilters.isChecked,
     ],
     queryFn: () =>
       getCandidates({
@@ -295,9 +335,17 @@ const CandidatesPage: React.FC = () => {
           appliedFilters.eduLevel.length > 0 && {
             EduLevel: appliedFilters.eduLevel,
           }),
+        ...(appliedFilters.eduMajor &&
+          appliedFilters.eduMajor.length > 0 && {
+            EduMjrName: appliedFilters.eduMajor,
+          }),
         ...(appliedFilters.gender &&
           appliedFilters.gender !== "all" && {
             CanSex: appliedFilters.gender,
+          }),
+        ...(appliedFilters.isChecked &&
+          appliedFilters.isChecked !== "all" && {
+            is_checked: appliedFilters.isChecked,
           }),
       }),
     placeholderData: keepPreviousData,
@@ -485,6 +533,25 @@ const CandidatesPage: React.FC = () => {
 
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Jurusan
+                </label>
+                <MultiSelect
+                  options={
+                    eduMajorsResponse?.data?.map((mjr: any) => ({
+                      label: mjr.EduMjrName,
+                      value: mjr.EduMjrName,
+                    })) || []
+                  }
+                  selected={eduMajor}
+                  onChange={setEduMajor}
+                  placeholder="All Jurusan"
+                  className="w-full transition-all"
+                  maxCount={1}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Gender
                 </label>
                 <Select value={gender} onValueChange={setGender}>
@@ -575,6 +642,23 @@ const CandidatesPage: React.FC = () => {
                     </PopoverContent>
                   </Popover>
                 </div>
+              </div>
+
+              {/* Row 3 or Extension */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Check Status
+                </label>
+                <Select value={isChecked} onValueChange={setIsChecked}>
+                  <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="true">Checked (Done)</SelectItem>
+                    <SelectItem value="false">Unchecked</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

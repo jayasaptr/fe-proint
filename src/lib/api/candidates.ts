@@ -380,6 +380,8 @@ export interface CandidateFilters {
   per_page?: number;
   EduLevel?: string | number | (string | number)[];
   CanOriStateName?: string | string[];
+  EduMjrName?: string | string[];
+  is_checked?: string | boolean | number;
   [key: string]: any; // Allow dynamic column filters
 }
 
@@ -414,10 +416,12 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
   if (filters.sort_direction) addParam("sort_direction", filters.sort_direction);
   if (filters.page) addParam("page", filters.page);
   if (filters.per_page) addParam("per_page", filters.per_page);
+  if (filters.is_checked !== undefined) addParam("is_checked", filters.is_checked);
   
   // Multi-value filters
   if (filters.EduLevel) addParam("EduLevel", filters.EduLevel);
   if (filters.CanOriStateName) addParam("CanOriStateName", filters.CanOriStateName);
+  if (filters.EduMjrName) addParam("EduMjrName", filters.EduMjrName);
 
   // Add dynamic filters
   const standardKeys = [
@@ -436,6 +440,8 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
     "per_page",
     "EduLevel",
     "CanOriStateName",
+    "EduMjrName",
+    "is_checked",
   ];
 
   Object.keys(filters).forEach((key) => {
