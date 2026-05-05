@@ -340,6 +340,10 @@ export interface Candidate {
   is_checked?: boolean;
   checked_at?: string | null;
   checked_by?: string | null;
+  is_passed?: boolean;
+  passed_at?: string | null;
+  passed_by?: string | null;
+  passed_note?: string | null;
 }
 
 export interface CandidatePaginationData {
@@ -382,6 +386,7 @@ export interface CandidateFilters {
   CanOriStateName?: string | string[];
   EduMjrName?: string | string[];
   is_checked?: string | boolean | number;
+  is_passed?: string | boolean | number;
   [key: string]: any; // Allow dynamic column filters
 }
 
@@ -417,6 +422,7 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
   if (filters.page) addParam("page", filters.page);
   if (filters.per_page) addParam("per_page", filters.per_page);
   if (filters.is_checked !== undefined) addParam("is_checked", filters.is_checked);
+  if (filters.is_passed !== undefined) addParam("is_passed", filters.is_passed);
   
   // Multi-value filters
   if (filters.EduLevel) addParam("EduLevel", filters.EduLevel);
@@ -442,6 +448,7 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
     "CanOriStateName",
     "EduMjrName",
     "is_checked",
+    "is_passed",
   ];
 
   Object.keys(filters).forEach((key) => {
@@ -481,6 +488,28 @@ export const toggleCandidateChecklist = async (canId: string | number): Promise<
   };
 }> => {
   const response = await api.post(`${localApiBaseUrl}/candidates/${canId}/toggle-checklist`);
+  return response.data;
+};
+
+export const toggleCandidatePassed = async (
+  canId: string | number,
+  note?: string,
+): Promise<{
+  success: boolean;
+  message: string;
+  data: {
+    CanId: number;
+    is_passed: boolean;
+    passed_at: string | null;
+    passed_by: string | null;
+    passed_note: string | null;
+  };
+}> => {
+  const body = note && note.trim() !== "" ? { note: note.trim() } : {};
+  const response = await api.post(
+    `${localApiBaseUrl}/candidates/${canId}/toggle-passed`,
+    body,
+  );
   return response.data;
 };
 

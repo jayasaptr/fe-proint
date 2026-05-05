@@ -3,6 +3,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
@@ -17,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -27,6 +36,7 @@ import {
   getCandidates,
   postApplyToSqlServer,
   toggleCandidateChecklist,
+  toggleCandidatePassed,
   type Candidate,
 } from "@/lib/api/candidates";
 import api from "@/lib/axios";
@@ -38,12 +48,14 @@ import {
   Award,
   BriefcaseBusiness,
   Calendar as CalendarIcon,
+  CheckCircle2,
   Download,
   Eye,
   Filter,
   Mail,
   Phone,
   Search,
+  Trophy,
   User,
   Users,
 } from "lucide-react";
@@ -156,6 +168,9 @@ const CandidatesPage: React.FC = () => {
   const [isChecked, setIsChecked] = useState<string>(() =>
     getSessionState("candidates_isChecked", ""),
   );
+  const [isPassed, setIsPassed] = useState<string>(() =>
+    getSessionState("candidates_isPassed", ""),
+  );
 
   // Applied Filter states (for API)
   const defaultAppliedFilters = {
@@ -169,6 +184,7 @@ const CandidatesPage: React.FC = () => {
     eduMajor: [] as string[],
     gender: "",
     isChecked: "",
+    isPassed: "",
   };
   const [appliedFilters, setAppliedFilters] = useState(() => {
     const val = getSessionState("candidates_appliedFilters", defaultAppliedFilters);
@@ -204,6 +220,7 @@ const CandidatesPage: React.FC = () => {
     sessionStorage.setItem("candidates_eduMajor", JSON.stringify(eduMajor));
     sessionStorage.setItem("candidates_gender", JSON.stringify(gender));
     sessionStorage.setItem("candidates_isChecked", JSON.stringify(isChecked));
+    sessionStorage.setItem("candidates_isPassed", JSON.stringify(isPassed));
     sessionStorage.setItem(
       "candidates_appliedFilters",
       JSON.stringify(appliedFilters),
@@ -221,6 +238,7 @@ const CandidatesPage: React.FC = () => {
     eduMajor,
     gender,
     isChecked,
+    isPassed,
     appliedFilters,
   ]);
 
@@ -236,6 +254,7 @@ const CandidatesPage: React.FC = () => {
       eduMajor,
       gender,
       isChecked,
+      isPassed,
     });
     setPage(1);
   };
@@ -251,6 +270,7 @@ const CandidatesPage: React.FC = () => {
     setEduMajor([]);
     setGender("");
     setIsChecked("");
+    setIsPassed("");
     setAppliedFilters(defaultAppliedFilters);
     setPage(1);
   };
@@ -311,6 +331,7 @@ const CandidatesPage: React.FC = () => {
       appliedFilters.eduMajor,
       appliedFilters.gender,
       appliedFilters.isChecked,
+      appliedFilters.isPassed,
     ],
     queryFn: () =>
       getCandidates({
@@ -347,6 +368,10 @@ const CandidatesPage: React.FC = () => {
           appliedFilters.isChecked !== "all" && {
             is_checked: appliedFilters.isChecked,
           }),
+        ...(appliedFilters.isPassed &&
+          appliedFilters.isPassed !== "all" && {
+            is_passed: appliedFilters.isPassed,
+          }),
       }),
     placeholderData: keepPreviousData,
     refetchOnMount: "always",
@@ -379,6 +404,15 @@ const CandidatesPage: React.FC = () => {
     [canId: number]: boolean;
   }>({});
 
+  const [loadingPassed, setLoadingPassed] = useState<{
+    [canId: number]: boolean;
+  }>({});
+
+  // Modal state for marking candidate as passed (with optional note)
+  const [passedDialogCandidate, setPassedDialogCandidate] =
+    useState<Candidate | null>(null);
+  const [passedNoteInput, setPassedNoteInput] = useState<string>("");
+
   const handleToggleChecklist = async (canId: number) => {
     setLoadingChecklist((prev) => ({ ...prev, [canId]: true }));
     try {
@@ -394,6 +428,49 @@ const CandidatesPage: React.FC = () => {
     } finally {
       setLoadingChecklist((prev) => ({ ...prev, [canId]: false }));
     }
+  };
+
+  const callTogglePassed = async (canId: number, note?: string) => {
+    setLoadingPassed((prev) => ({ ...prev, [canId]: true }));
+    try {
+      const res = await toggleCandidatePassed(canId, note);
+      if (res.success) {
+        toast.success(res.message);
+        refetch();
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.message ||
+          err?.response?.data?.errors?.note?.[0] ||
+          "Failed to update selection-passed status",
+      );
+    } finally {
+      setLoadingPassed((prev) => ({ ...prev, [canId]: false }));
+    }
+  };
+
+  const handlePassedClick = (candidate: Candidate) => {
+    if (candidate.is_passed) {
+      const ok = window.confirm(
+        `Cabut tanda lolos untuk "${candidate.CanName}"? Catatan yang tersimpan akan ikut terhapus.`,
+      );
+      if (!ok) return;
+      callTogglePassed(candidate.CanId);
+    } else {
+      setPassedNoteInput("");
+      setPassedDialogCandidate(candidate);
+    }
+  };
+
+  const handleConfirmMarkPassed = async () => {
+    if (!passedDialogCandidate) return;
+    const candidate = passedDialogCandidate;
+    const note = passedNoteInput;
+    setPassedDialogCandidate(null);
+    setPassedNoteInput("");
+    await callTogglePassed(candidate.CanId, note);
   };
 
   return (
@@ -660,6 +737,22 @@ const CandidatesPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Selection Status
+                </label>
+                <Select value={isPassed} onValueChange={setIsPassed}>
+                  <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="true">Lolos Seleksi</SelectItem>
+                    <SelectItem value="false">Belum Lolos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Action Buttons */}
@@ -696,13 +789,14 @@ const CandidatesPage: React.FC = () => {
                 <th className="px-6 py-4">Applied Job</th>
                 <th className="px-6 py-4">Status Apply</th>
                 <th className="px-6 py-4">Checked</th>
+                <th className="px-6 py-4">Lolos Seleksi</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={10}>
                     <div className="flex flex-col items-center justify-center gap-4 py-24">
                       <Activity className="w-8 h-8 text-orange-500 animate-pulse" />
                       <p className="text-sm font-semibold text-slate-400 tracking-wider uppercase">
@@ -713,7 +807,7 @@ const CandidatesPage: React.FC = () => {
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={10}>
                     <div className="flex flex-col items-center justify-center gap-3 py-24">
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
                         <Search className="w-8 h-8 text-slate-300" />
@@ -902,6 +996,71 @@ const CandidatesPage: React.FC = () => {
                           </Tooltip>
                         </TooltipProvider>
                       </td>
+                      <td className="px-6 py-4">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => handlePassedClick(candidate)}
+                                disabled={loadingPassed[candidate.CanId]}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all",
+                                  candidate.is_passed
+                                    ? "border-orange-200 bg-[#FF6905] text-white hover:bg-[#e35e04] dark:border-orange-700"
+                                    : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+                                  loadingPassed[candidate.CanId] &&
+                                    "opacity-50 cursor-not-allowed",
+                                )}
+                              >
+                                {loadingPassed[candidate.CanId] ? (
+                                  <span className="animate-spin w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                                ) : candidate.is_passed ? (
+                                  <Trophy className="w-3.5 h-3.5" />
+                                ) : (
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                )}
+                                {candidate.is_passed
+                                  ? "Lolos Seleksi"
+                                  : "Tandai Lolos"}
+                              </button>
+                            </TooltipTrigger>
+                            {candidate.is_passed && (
+                              <TooltipContent className="bg-slate-900 text-white border-slate-800 p-2 text-xs max-w-xs">
+                                <div className="flex flex-col gap-1">
+                                  <p className="font-semibold text-orange-400">
+                                    Ditandai oleh:
+                                  </p>
+                                  <p className="break-all">
+                                    {candidate.passed_by || "-"}
+                                  </p>
+                                  <p className="font-semibold text-orange-400 mt-1">
+                                    Pada:
+                                  </p>
+                                  <p>
+                                    {candidate.passed_at
+                                      ? format(
+                                          new Date(candidate.passed_at),
+                                          "PPP p",
+                                        )
+                                      : "-"}
+                                  </p>
+                                  {candidate.passed_note && (
+                                    <>
+                                      <p className="font-semibold text-orange-400 mt-1">
+                                        Catatan:
+                                      </p>
+                                      <p className="whitespace-pre-wrap">
+                                        {candidate.passed_note}
+                                      </p>
+                                    </>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
+                      </td>
                       <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button
                           size="sm"
@@ -979,6 +1138,72 @@ const CandidatesPage: React.FC = () => {
           />
         </div>
       </div>
+
+      <Dialog
+        open={!!passedDialogCandidate}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPassedDialogCandidate(null);
+            setPassedNoteInput("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tandai Lolos Seleksi</DialogTitle>
+            <DialogDescription>
+              {passedDialogCandidate ? (
+                <>
+                  Tandai{" "}
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
+                    {passedDialogCandidate.CanName}
+                  </span>{" "}
+                  sebagai lolos seleksi. Catatan bersifat opsional (maks 1000
+                  karakter).
+                </>
+              ) : (
+                "Tandai candidate sebagai lolos seleksi."
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Catatan (opsional)
+            </label>
+            <Textarea
+              value={passedNoteInput}
+              onChange={(e) => setPassedNoteInput(e.target.value)}
+              placeholder="Contoh: Lolos tahap interview HR, jadwalkan psikotes"
+              maxLength={1000}
+              rows={4}
+            />
+            <span className="text-[11px] text-slate-400 self-end">
+              {passedNoteInput.length} / 1000
+            </span>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPassedDialogCandidate(null);
+                setPassedNoteInput("");
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleConfirmMarkPassed}
+              disabled={
+                !!passedDialogCandidate &&
+                !!loadingPassed[passedDialogCandidate.CanId]
+              }
+              className="bg-[#FF6905] hover:bg-[#e35e04] text-white"
+            >
+              Tandai Lolos
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
