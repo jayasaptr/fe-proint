@@ -1,9 +1,13 @@
 // Apply candidate ke SQL Server
-export const postApplyToSqlServer = async (canId: string | number): Promise<{ success: boolean; message: string }> => {
-  const response = await api.post(`${localApiBaseUrl}/candidates/${canId}/apply-sqlserver`);
+export const postApplyToSqlServer = async (
+  canId: string | number,
+): Promise<{ success: boolean; message: string }> => {
+  const response = await api.post(
+    `${localApiBaseUrl}/candidates/${canId}/apply-sqlserver`,
+  );
   return response.data;
 };
-import api from '../axios';
+import api from "../axios";
 
 export interface CandidateAddress {
   CanId?: string;
@@ -58,7 +62,7 @@ export interface CandidateEducation {
   EduGraduateId?: string | null;
   EduFrontTitle?: string | null;
   EduEndTitle?: string | null;
-  FgLastEdu?: 'Y' | 'N' | null;
+  FgLastEdu?: "Y" | "N" | null;
   UpdDate?: string;
   UpdUser?: string;
   UpdFlag?: string;
@@ -390,9 +394,12 @@ export interface CandidateFilters {
   [key: string]: any; // Allow dynamic column filters
 }
 
-const localApiBaseUrl = import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
+const localApiBaseUrl =
+  import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
 
-export const getCandidates = async (filters: CandidateFilters = {}): Promise<CandidatesResponse> => {
+export const getCandidates = async (
+  filters: CandidateFilters = {},
+): Promise<CandidatesResponse> => {
   const params: Record<string, any> = {};
 
   // Helper function to add parameters, handling arrays with [] notation
@@ -418,15 +425,18 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
   if (filters.job_id) addParam("job_id", filters.job_id);
   if (filters.search) addParam("search", filters.search);
   if (filters.sort_by) addParam("sort_by", filters.sort_by);
-  if (filters.sort_direction) addParam("sort_direction", filters.sort_direction);
+  if (filters.sort_direction)
+    addParam("sort_direction", filters.sort_direction);
   if (filters.page) addParam("page", filters.page);
   if (filters.per_page) addParam("per_page", filters.per_page);
-  if (filters.is_checked !== undefined) addParam("is_checked", filters.is_checked);
+  if (filters.is_checked !== undefined)
+    addParam("is_checked", filters.is_checked);
   if (filters.is_passed !== undefined) addParam("is_passed", filters.is_passed);
-  
+
   // Multi-value filters
   if (filters.EduLevel) addParam("EduLevel", filters.EduLevel);
-  if (filters.CanOriStateName) addParam("CanOriStateName", filters.CanOriStateName);
+  if (filters.CanOriStateName)
+    addParam("CanOriStateName", filters.CanOriStateName);
   if (filters.EduMjrName) addParam("EduMjrName", filters.EduMjrName);
 
   // Add dynamic filters
@@ -457,27 +467,66 @@ export const getCandidates = async (filters: CandidateFilters = {}): Promise<Can
     }
   });
 
-  const response = await api.get<CandidatesResponse>(`${localApiBaseUrl}/candidates`, {
-    params,
-  });
+  const response = await api.get<CandidatesResponse>(
+    `${localApiBaseUrl}/candidates`,
+    {
+      params,
+    },
+  );
 
   return response.data;
 };
 
-export const getCandidateById = async (canId: string | number): Promise<CandidateDetailResponse> => {
-  const response = await api.get<CandidateDetailResponse>(`${localApiBaseUrl}/candidates/${canId}`);
+export const getCandidateById = async (
+  canId: string | number,
+): Promise<CandidateDetailResponse> => {
+  const response = await api.get<CandidateDetailResponse>(
+    `${localApiBaseUrl}/candidates/${canId}`,
+  );
   return response.data;
 };
 
-export const downloadCandidateDocument = async (canId: string | number, canDocId: number): Promise<Blob> => {
-  const response = await api.get(`${localApiBaseUrl}/candidates/${canId}/documents/${canDocId}/download`, {
-    responseType: 'blob',
-  });
+export const downloadCandidateDocument = async (
+  canId: string | number,
+  canDocId: number,
+): Promise<Blob> => {
+  const response = await api.get(
+    `${localApiBaseUrl}/candidates/${canId}/documents/${canDocId}/download`,
+    {
+      responseType: "blob",
+    },
+  );
 
   return response.data;
 };
 
-export const toggleCandidateChecklist = async (canId: string | number): Promise<{
+export const downloadCandidateAttachments = async (
+  canId: string | number,
+): Promise<{ blob: Blob; filename: string }> => {
+  const response = await api.get(
+    `${localApiBaseUrl}/candidates/${canId}/attachments/download`,
+    {
+      responseType: "blob",
+      headers: {
+        Accept: "application/zip",
+      },
+    },
+  );
+
+  // Extract filename from Content-Disposition header
+  const disposition = response.headers["content-disposition"] ?? "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const filename = match?.[1] ?? `candidate-${canId}-attachments.zip`;
+
+  return {
+    blob: response.data,
+    filename,
+  };
+};
+
+export const toggleCandidateChecklist = async (
+  canId: string | number,
+): Promise<{
   success: boolean;
   message: string;
   data: {
@@ -487,7 +536,9 @@ export const toggleCandidateChecklist = async (canId: string | number): Promise<
     checked_by: string | null;
   };
 }> => {
-  const response = await api.post(`${localApiBaseUrl}/candidates/${canId}/toggle-checklist`);
+  const response = await api.post(
+    `${localApiBaseUrl}/candidates/${canId}/toggle-checklist`,
+  );
   return response.data;
 };
 
@@ -512,5 +563,3 @@ export const toggleCandidatePassed = async (
   );
   return response.data;
 };
-
-

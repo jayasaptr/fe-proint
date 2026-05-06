@@ -33,6 +33,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  downloadCandidateAttachments,
   getCandidates,
   postApplyToSqlServer,
   toggleCandidateChecklist,
@@ -187,7 +188,10 @@ const CandidatesPage: React.FC = () => {
     isPassed: "",
   };
   const [appliedFilters, setAppliedFilters] = useState(() => {
-    const val = getSessionState("candidates_appliedFilters", defaultAppliedFilters);
+    const val = getSessionState(
+      "candidates_appliedFilters",
+      defaultAppliedFilters,
+    );
     return {
       ...defaultAppliedFilters,
       ...val,
@@ -397,6 +401,10 @@ const CandidatesPage: React.FC = () => {
 
   // State loading per kandidat
   const [loadingApply, setLoadingApply] = useState<{
+    [canId: number]: boolean;
+  }>({});
+
+  const [loadingDownload, setLoadingDownload] = useState<{
     [canId: number]: boolean;
   }>({});
 
@@ -1070,6 +1078,87 @@ const CandidatesPage: React.FC = () => {
                           }
                         >
                           <Eye className="w-4 h-4 mr-2" /> Details
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-9 px-4 rounded-xl font-medium border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-slate-700 shadow-sm transition-all"
+                          disabled={!!loadingDownload[candidate.CanId]}
+                          onClick={async () => {
+                            setLoadingDownload((prev) => ({
+                              ...prev,
+                              [candidate.CanId]: true,
+                            }));
+                            try {
+                              const { blob, filename } =
+                                await downloadCandidateAttachments(
+                                  candidate.CanId,
+                                );
+
+                              // Create download link
+                              const url = window.URL.createObjectURL(
+                                new Blob([blob], { type: "application/zip" }),
+                              );
+                              const link = document.createElement("a");
+                              link.href = url;
+                              link.download = filename;
+                              document.body.appendChild(link);
+                              link.click();
+                              link.remove();
+                              window.URL.revokeObjectURL(url);
+
+                              toast.success("Attachment berhasil didownload");
+                            } catch (err: any) {
+                              // Handle JSON error wrapped in Blob
+                              const blob = err.response?.data;
+                              if (blob instanceof Blob) {
+                                try {
+                                  const text = await blob.text();
+                                  const json = JSON.parse(text);
+                                  // If no attachments, show info instead of error
+                                  if (
+                                    json.message?.includes(
+                                      "No attachments found",
+                                    ) ||
+                                    json.message?.includes(
+                                      "No attachment binaries available",
+                                    )
+                                  ) {
+                                    toast.info(
+                                      json.message ||
+                                        "Kandidat tidak memiliki attachment",
+                                    );
+                                  } else {
+                                    toast.error(
+                                      json.message ||
+                                        "Gagal download attachment",
+                                    );
+                                  }
+                                } catch {
+                                  toast.error("Gagal download attachment");
+                                }
+                              } else {
+                                toast.error("Gagal download attachment");
+                              }
+                            } finally {
+                              setLoadingDownload((prev) => ({
+                                ...prev,
+                                [candidate.CanId]: false,
+                              }));
+                            }
+                          }}
+                        >
+                          {loadingDownload[candidate.CanId] ? (
+                            <span className="flex items-center">
+                              <span className="animate-spin mr-2 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></span>
+                              Loading...
+                            </span>
+                          ) : (
+                            <>
+                              <Download className="w-4 h-4 mr-2" /> Download
+                              Attachment
+                            </>
+                          )}
                         </Button>
                         <Button
                           size="sm"
