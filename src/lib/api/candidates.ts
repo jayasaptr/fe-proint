@@ -500,6 +500,30 @@ export const downloadCandidateDocument = async (
   return response.data;
 };
 
+export const previewCandidateDocument = async (
+  canId: string | number,
+  canDocId: number,
+): Promise<{ blob: Blob; mimeType: string; filename: string | null }> => {
+  const response = await api.get(
+    `${localApiBaseUrl}/candidates/${canId}/documents/${canDocId}/preview`,
+    {
+      responseType: "blob",
+    },
+  );
+
+  const blob: Blob = response.data;
+  const mimeType =
+    response.headers["content-type"]?.split(";")[0]?.trim() ||
+    blob.type ||
+    "application/octet-stream";
+
+  const disposition = response.headers["content-disposition"] ?? "";
+  const match = disposition.match(/filename\*?="?([^";]+)"?/i);
+  const filename = match?.[1] ? decodeURIComponent(match[1]) : null;
+
+  return { blob, mimeType, filename };
+};
+
 export const downloadCandidateAttachments = async (
   canId: string | number,
 ): Promise<{ blob: Blob; filename: string }> => {

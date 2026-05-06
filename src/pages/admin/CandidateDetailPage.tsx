@@ -1,9 +1,16 @@
+import DocumentPreview from "@/components/DocumentPreview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   downloadCandidateDocument,
   getCandidateById,
+  previewCandidateDocument,
 } from "@/lib/api/candidates";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -15,11 +22,13 @@ import {
   ChevronRight,
   CreditCard,
   Download,
+  Eye,
   FileCheck,
   FileText,
   Fingerprint,
   GraduationCap,
   Languages,
+  Loader2,
   Mail,
   MapPin,
   MoreHorizontal,
@@ -149,6 +158,22 @@ const CandidateDetailPage: React.FC = () => {
   const [downloadingDocumentId, setDownloadingDocumentId] = useState<
     number | null
   >(null);
+  const [previewingDocumentId, setPreviewingDocumentId] = useState<
+    number | null
+  >(null);
+  const [previewState, setPreviewState] = useState<{
+    open: boolean;
+    url: string | null;
+    blob: Blob | null;
+    mimeType: string | null;
+    fileName: string | null;
+  }>({
+    open: false,
+    url: null,
+    blob: null,
+    mimeType: null,
+    fileName: null,
+  });
   const [selectedJob, setSelectedJob] = useState<any>(null);
 
   const { data, isLoading, error } = useQuery({
@@ -201,13 +226,19 @@ const CandidateDetailPage: React.FC = () => {
   const expectedSalaryFromQuestions = useMemo(() => {
     // Get first experience with questions
     const firstExperience = experiences?.[0];
-    if (!firstExperience || !Array.isArray(firstExperience.questions) || firstExperience.questions.length === 0) return null;
+    if (
+      !firstExperience ||
+      !Array.isArray(firstExperience.questions) ||
+      firstExperience.questions.length === 0
+    )
+      return null;
 
     // Find question related to salary expectation (containing "ekspektasi")
     const questions = firstExperience.questions;
-    const salaryQuestion = questions.find((q: any) =>
-      q.question?.QuestName?.toLowerCase().includes("ekspektasi"),
-    ) || questions[questions.length - 1];
+    const salaryQuestion =
+      questions.find((q: any) =>
+        q.question?.QuestName?.toLowerCase().includes("ekspektasi"),
+      ) || questions[questions.length - 1];
 
     if (!salaryQuestion) return null;
 
@@ -216,6 +247,61 @@ const CandidateDetailPage: React.FC = () => {
   }, [experiences]);
 
   useEffect(() => setIsPhotoError(false), [photoSource]);
+
+  const closePreview = () => {
+    setPreviewState((prev) => {
+      if (prev.url) window.URL.revokeObjectURL(prev.url);
+      return {
+        open: false,
+        url: null,
+        blob: null,
+        mimeType: null,
+        fileName: null,
+      };
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (previewState.url) window.URL.revokeObjectURL(previewState.url);
+    };
+  }, [previewState.url]);
+
+  const handlePreviewDocument = async (
+    docId?: number,
+    fileName?: string | null,
+    fallbackMime?: string | null,
+  ) => {
+    if (!candidate || !docId) {
+      toast.error("Dokumen tidak valid untuk dibuka.");
+      return;
+    }
+
+    try {
+      setPreviewingDocumentId(docId);
+      const { blob, mimeType, filename } = await previewCandidateDocument(
+        candidate.CanId,
+        docId,
+      );
+      const url = window.URL.createObjectURL(blob);
+      const resolvedMime = mimeType || fallbackMime || blob.type || null;
+
+      setPreviewState({
+        open: true,
+        url,
+        blob,
+        mimeType: resolvedMime,
+        fileName: filename || fileName || `document-${docId}`,
+      });
+    } catch (previewError) {
+      const err = previewError as any;
+      toast.error(
+        err?.response?.data?.message || "Gagal membuka preview dokumen.",
+      );
+    } finally {
+      setPreviewingDocumentId(null);
+    }
+  };
 
   const handleDownloadDocument = async (
     docId?: number,
@@ -421,7 +507,9 @@ const CandidateDetailPage: React.FC = () => {
                 <InfoRow
                   label="Expected Salary"
                   value={formatCurrency(
-                    expectedSalaryFromQuestions ?? candidate.experiences?.[0]?.ExpSalary ?? candidate.CanExpSal
+                    expectedSalaryFromQuestions ??
+                      candidate.experiences?.[0]?.ExpSalary ??
+                      candidate.CanExpSal,
                   )}
                   highlight
                 />
@@ -835,6 +923,10 @@ const CandidateDetailPage: React.FC = () => {
                     );
                     const isDownloading =
                       downloadingDocumentId === doc.CanDocId;
+                    const isPreviewing = previewingDocumentId === doc.CanDocId;
+                    const canOpenPreview = Boolean(
+                      doc.has_document || doc.CanDocId,
+                    );
                     return (
                       <div
                         key={i}
@@ -856,26 +948,48 @@ const CandidateDetailPage: React.FC = () => {
                             </p>
                           </div>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full mt-auto"
-                          onClick={() =>
-                            handleDownloadDocument(
-                              doc.CanDocId,
-                              fileName,
-                              doc.can_doc_data_url,
-                            )
-                          }
-                          disabled={!canDownload || isDownloading}
-                        >
-                          {isDownloading ? (
-                            <MoreHorizontal className="w-4 h-4 animate-pulse" />
-                          ) : (
-                            <Download className="w-4 h-4 mr-2" />
-                          )}
-                          Download
-                        </Button>
+                        <div className="flex flex-col gap-2 mt-auto">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={() =>
+                              handlePreviewDocument(
+                                doc.CanDocId,
+                                fileName,
+                                doc.can_doc_mime_type,
+                              )
+                            }
+                            disabled={!canOpenPreview || isPreviewing}
+                          >
+                            {isPreviewing ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Eye className="w-4 h-4 mr-2" />
+                            )}
+                            Preview
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-full"
+                            onClick={() =>
+                              handleDownloadDocument(
+                                doc.CanDocId,
+                                fileName,
+                                doc.can_doc_data_url,
+                              )
+                            }
+                            disabled={!canDownload || isDownloading}
+                          >
+                            {isDownloading ? (
+                              <MoreHorizontal className="w-4 h-4 animate-pulse" />
+                            ) : (
+                              <Download className="w-4 h-4 mr-2" />
+                            )}
+                            Download
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
@@ -889,6 +1003,10 @@ const CandidateDetailPage: React.FC = () => {
       {/* Photo Preview Modal */}
       <Dialog open={isPhotoPreviewOpen} onOpenChange={setIsPhotoPreviewOpen}>
         <DialogContent className="max-w-xl p-0 overflow-hidden bg-transparent border-none shadow-none">
+          <DialogTitle className="sr-only">Candidate Photo Preview</DialogTitle>
+          <DialogDescription className="sr-only">
+            Enlarged preview of the candidate profile photo.
+          </DialogDescription>
           {photoSource && (
             <img
               src={photoSource}
@@ -896,6 +1014,79 @@ const CandidateDetailPage: React.FC = () => {
               className="w-full h-auto max-h-[85vh] object-contain rounded-xl shadow-2xl"
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Preview Modal */}
+      <Dialog
+        open={previewState.open}
+        onOpenChange={(open) => {
+          if (!open) closePreview();
+        }}
+      >
+        <DialogContent
+          className="max-w-5xl! w-[95vw] p-0 overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+          showCloseButton={false}
+        >
+          <DialogDescription className="sr-only">
+            Preview of candidate document {previewState.fileName ?? ""}.
+          </DialogDescription>
+          <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+              <DialogTitle
+                className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate"
+                title={previewState.fileName ?? undefined}
+              >
+                {previewState.fileName || "Document Preview"}
+              </DialogTitle>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {previewState.url && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!previewState.url) return;
+                    const a = document.createElement("a");
+                    a.href = previewState.url;
+                    a.download = previewState.fileName || "document";
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                  }}
+                >
+                  <Download className="w-4 h-4 mr-2" /> Download
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={closePreview}>
+                Close
+              </Button>
+            </div>
+          </div>
+          <div className="bg-slate-100 dark:bg-slate-950 h-[80vh] flex items-center justify-center overflow-hidden">
+            {previewState.url && previewState.blob ? (
+              <DocumentPreview
+                blob={previewState.blob}
+                blobUrl={previewState.url}
+                mimeType={previewState.mimeType}
+                fileName={previewState.fileName}
+                onDownload={() => {
+                  if (!previewState.url) return;
+                  const a = document.createElement("a");
+                  a.href = previewState.url;
+                  a.download = previewState.fileName || "document";
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                }}
+              />
+            ) : (
+              <div className="flex items-center gap-2 text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading preview…
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -913,9 +1104,12 @@ const CandidateDetailPage: React.FC = () => {
                     <BriefcaseBusiness className="w-6 h-6 text-orange-600 dark:text-orange-400" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white leading-tight mb-1">
+                    <DialogDescription className="sr-only">
+                      Detailed information about the expected job position.
+                    </DialogDescription>
+                    <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white leading-tight mb-1">
                       {getJobExpectedName(selectedJob)}
-                    </h2>
+                    </DialogTitle>
                     <p className="text-sm font-medium text-slate-500 flex items-center gap-1.5">
                       <Building2 className="w-4 h-4" />{" "}
                       {getJobExpectedOrganization(selectedJob)}
