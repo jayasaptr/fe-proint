@@ -61,7 +61,7 @@ import {
   Users,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { toast } from "sonner";
 
 // --- Formatter Helpers ---
@@ -128,6 +128,8 @@ const getSessionState = (key: string, defaultValue: any) => {
 // --- Main Page Component ---
 const CandidatesPage: React.FC = () => {
   const navigate = useNavigate();
+  const { currentUser } = useOutletContext<{ currentUser: any }>();
+  const isAdmin = currentUser?.is_admin;
   const [page, setPage] = useState<number>(() =>
     getSessionState("candidates_page", 1),
   );
@@ -789,13 +791,14 @@ const CandidatesPage: React.FC = () => {
           <table className="w-full text-left whitespace-nowrap min-w-[1000px]">
             <thead className="bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
               <tr className="text-[12px] font-semibold tracking-wider text-slate-500 uppercase">
-                <th className="px-6 py-4">ID Code</th>
-                <th className="px-6 py-4">Candidate Profile</th>
+                <th className="px-6 py-4 w-40">ID Code</th>
+                <th className="px-6 py-4 md:sticky md:left-0 z-20 bg-slate-50 dark:bg-slate-900  border-slate-200 dark:border-slate-800">Name</th>
                 <th className="px-6 py-4">Contact Detail</th>
                 <th className="px-6 py-4">Demographics</th>
                 <th className="px-6 py-4">Education Background</th>
                 <th className="px-6 py-4">Applied Job</th>
                 <th className="px-6 py-4">Status Apply</th>
+                <th className="px-6 py-4">Tanggal Daftar</th>
                 <th className="px-6 py-4">Checked</th>
                 <th className="px-6 py-4">Lolos Seleksi</th>
                 <th className="px-6 py-4 text-right">Actions</th>
@@ -804,7 +807,7 @@ const CandidatesPage: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <div className="flex flex-col items-center justify-center gap-4 py-24">
                       <Activity className="w-8 h-8 text-orange-500 animate-pulse" />
                       <p className="text-sm font-semibold text-slate-400 tracking-wider uppercase">
@@ -815,7 +818,7 @@ const CandidatesPage: React.FC = () => {
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>
+                  <td colSpan={11}>
                     <div className="flex flex-col items-center justify-center gap-3 py-24">
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
                         <Search className="w-8 h-8 text-slate-300" />
@@ -838,13 +841,15 @@ const CandidatesPage: React.FC = () => {
                   return (
                     <tr
                       key={candidate.CanId}
-                      className="group hover:bg-orange-50/50 dark:hover:bg-slate-800/80 transition-colors"
+                      className="group hover:bg-orange-50 dark:hover:bg-slate-800/80 transition-colors"
                     >
-                      <td className="px-6 py-4 text-xs font-mono font-medium text-slate-500">
+                      <td className="px-6 py-4 w-40 text-xs font-mono font-medium text-slate-500">
                         {candidate.CanCode || "-"}
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
+                      <td className="px-6 py-4 md:sticky md:left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-orange-50 dark:group-hover:bg-slate-800  border-slate-100 dark:border-slate-800">
+                        <div className="flex items-center gap-3 hover:cursor-pointer"   onClick={() =>
+                            navigate(`/admin/candidates/${candidate.CanId}`)
+                          }>
                           <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
                             {candidate.photos?.[0]?.can_photo_base64 ? (
                               <img
@@ -955,6 +960,20 @@ const CandidatesPage: React.FC = () => {
                         >
                           {candidate.status_apply || "local"}
                         </Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                            {candidate.CanEntryDate
+                              ? format(new Date(candidate.CanEntryDate), "dd MMM yyyy")
+                              : "-"}
+                          </span>
+                          {candidate.CanEntryDate && (
+                            <span className="text-[11px] text-slate-400">
+                              {format(new Date(candidate.CanEntryDate), "HH:mm")}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <TooltipProvider>
@@ -1160,7 +1179,7 @@ const CandidatesPage: React.FC = () => {
                             </>
                           )}
                         </Button>
-                        <Button
+                        {isAdmin && <Button
                           size="sm"
                           variant="outline"
                           className="h-9 px-4 rounded-xl font-medium border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-slate-700 shadow-sm transition-all"
@@ -1205,7 +1224,7 @@ const CandidatesPage: React.FC = () => {
                               Server
                             </>
                           )}
-                        </Button>
+                        </Button>}
                       </td>
                     </tr>
                   );
