@@ -49,7 +49,9 @@ import {
   Award,
   BriefcaseBusiness,
   Calendar as CalendarIcon,
+  Check,
   CheckCircle2,
+  Copy,
   Download,
   Eye,
   Filter,
@@ -422,6 +424,22 @@ const CandidatesPage: React.FC = () => {
   const [passedDialogCandidate, setPassedDialogCandidate] =
     useState<Candidate | null>(null);
   const [passedNoteInput, setPassedNoteInput] = useState<string>("");
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = async (value: string, key: string, label: string) => {
+    if (!value || value === "-") return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(key);
+      toast.success(`${label} copied`);
+      setTimeout(() => {
+        setCopiedKey((prev) => (prev === key ? null : prev));
+      }, 1500);
+    } catch {
+      toast.error(`Failed to copy ${label.toLowerCase()}`);
+    }
+  };
 
   const handleToggleChecklist = async (canId: number) => {
     setLoadingChecklist((prev) => ({ ...prev, [canId]: true }));
@@ -881,13 +899,65 @@ const CandidatesPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1.5">
-                          <span className="flex items-center gap-2 text-[13px] font-medium text-slate-600 dark:text-slate-300 max-w-[200px] truncate">
-                            <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />{" "}
-                            {candidate.CanEmail || "-"}
+                          <span className="group/copy flex items-center gap-2 text-[13px] font-medium text-slate-600 dark:text-slate-300 max-w-[220px]">
+                            <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span
+                              className="truncate"
+                              title={candidate.CanEmail || ""}
+                            >
+                              {candidate.CanEmail || "-"}
+                            </span>
+                            {candidate.CanEmail && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopy(
+                                    candidate.CanEmail!,
+                                    `email-${candidate.CanId}`,
+                                    "Email",
+                                  );
+                                }}
+                                className="ml-auto p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-orange-500 transition-colors shrink-0"
+                                title="Copy email"
+                              >
+                                {copiedKey === `email-${candidate.CanId}` ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
                           </span>
-                          <span className="flex items-center gap-2 text-xs font-medium text-slate-500">
-                            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />{" "}
-                            {candidate.CanHandphone || "-"}
+                          <span className="group/copy flex items-center gap-2 text-xs font-medium text-slate-500 max-w-[220px]">
+                            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span
+                              className="truncate"
+                              title={candidate.CanHandphone || ""}
+                            >
+                              {candidate.CanHandphone || "-"}
+                            </span>
+                            {candidate.CanHandphone && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopy(
+                                    candidate.CanHandphone!,
+                                    `phone-${candidate.CanId}`,
+                                    "Phone",
+                                  );
+                                }}
+                                className="ml-auto p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-orange-500 transition-colors shrink-0"
+                                title="Copy phone"
+                              >
+                                {copiedKey === `phone-${candidate.CanId}` ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
                           </span>
                         </div>
                       </td>

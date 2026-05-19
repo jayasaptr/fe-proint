@@ -11,7 +11,11 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    exclude: ['@ckeditor/ckeditor5-build-classic', '@ckeditor/ckeditor5-react'],
+  },
   build: {
+    sourcemap: false,
     cssCodeSplit: true,
     rollupOptions: {
       output: {
