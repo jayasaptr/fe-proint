@@ -176,6 +176,9 @@ const CandidatesPage: React.FC = () => {
   const [isPassed, setIsPassed] = useState<string>(() =>
     getSessionState("candidates_isPassed", ""),
   );
+  const [passedNote, setPassedNote] = useState<string>(() =>
+    getSessionState("candidates_passedNote", ""),
+  );
 
   // Applied Filter states (for API)
   const defaultAppliedFilters = {
@@ -190,6 +193,7 @@ const CandidatesPage: React.FC = () => {
     gender: "",
     isChecked: "",
     isPassed: "",
+    passedNote: "",
   };
   const [appliedFilters, setAppliedFilters] = useState(() => {
     const val = getSessionState(
@@ -229,6 +233,7 @@ const CandidatesPage: React.FC = () => {
     sessionStorage.setItem("candidates_gender", JSON.stringify(gender));
     sessionStorage.setItem("candidates_isChecked", JSON.stringify(isChecked));
     sessionStorage.setItem("candidates_isPassed", JSON.stringify(isPassed));
+    sessionStorage.setItem("candidates_passedNote", JSON.stringify(passedNote));
     sessionStorage.setItem(
       "candidates_appliedFilters",
       JSON.stringify(appliedFilters),
@@ -247,6 +252,7 @@ const CandidatesPage: React.FC = () => {
     gender,
     isChecked,
     isPassed,
+    passedNote,
     appliedFilters,
   ]);
 
@@ -263,6 +269,7 @@ const CandidatesPage: React.FC = () => {
       gender,
       isChecked,
       isPassed,
+      passedNote,
     });
     setPage(1);
   };
@@ -279,6 +286,7 @@ const CandidatesPage: React.FC = () => {
     setGender("");
     setIsChecked("");
     setIsPassed("");
+    setPassedNote("");
     setAppliedFilters(defaultAppliedFilters);
     setPage(1);
   };
@@ -340,6 +348,7 @@ const CandidatesPage: React.FC = () => {
       appliedFilters.gender,
       appliedFilters.isChecked,
       appliedFilters.isPassed,
+      appliedFilters.passedNote,
     ],
     queryFn: () =>
       getCandidates({
@@ -379,6 +388,10 @@ const CandidatesPage: React.FC = () => {
         ...(appliedFilters.isPassed &&
           appliedFilters.isPassed !== "all" && {
             is_passed: appliedFilters.isPassed,
+          }),
+        ...(appliedFilters.passedNote &&
+          appliedFilters.passedNote.trim() && {
+            passed_note: appliedFilters.passedNote.trim(),
           }),
       }),
     placeholderData: keepPreviousData,
@@ -781,6 +794,22 @@ const CandidatesPage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="flex flex-col gap-2 sm:col-span-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Catatan Lolos Seleksi
+                </label>
+                <div className="relative w-full group">
+                  <Trophy className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                  <Input
+                    placeholder="Cari berdasarkan catatan lolos seleksi..."
+                    className="pl-10 h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                    value={passedNote}
+                    onChange={(e) => setPassedNote(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Action Buttons */}
@@ -1094,6 +1123,7 @@ const CandidatesPage: React.FC = () => {
                         </TooltipProvider>
                       </td>
                       <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1.5">
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -1157,6 +1187,15 @@ const CandidatesPage: React.FC = () => {
                             )}
                           </Tooltip>
                         </TooltipProvider>
+                          {candidate.is_passed && candidate.passed_note && (
+                            <span
+                              className="max-w-[220px] truncate text-[11px] font-medium text-slate-500 dark:text-slate-400"
+                              title={candidate.passed_note}
+                            >
+                              {candidate.passed_note}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button
