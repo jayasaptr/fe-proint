@@ -159,6 +159,10 @@ const CandidatesPage: React.FC = () => {
     const val = getSessionState("candidates_province", []);
     return Array.isArray(val) ? val : [];
   });
+  const [city, setCity] = useState<string[]>(() => {
+    const val = getSessionState("candidates_city", []);
+    return Array.isArray(val) ? val : [];
+  });
   const [eduLevel, setEduLevel] = useState<string[]>(() => {
     const val = getSessionState("candidates_eduLevel", []);
     return Array.isArray(val) ? val : [];
@@ -188,6 +192,7 @@ const CandidatesPage: React.FC = () => {
     startDate: "",
     endDate: "",
     province: [] as string[],
+    city: [] as string[],
     eduLevel: [] as string[],
     eduMajor: [] as string[],
     gender: "",
@@ -204,6 +209,7 @@ const CandidatesPage: React.FC = () => {
       ...defaultAppliedFilters,
       ...val,
       province: Array.isArray(val?.province) ? val.province : [],
+      city: Array.isArray(val?.city) ? val.city : [],
       eduLevel: Array.isArray(val?.eduLevel) ? val.eduLevel : [],
       eduMajor: Array.isArray(val?.eduMajor) ? val.eduMajor : [],
     };
@@ -228,6 +234,7 @@ const CandidatesPage: React.FC = () => {
     sessionStorage.setItem("candidates_startDate", JSON.stringify(startDate));
     sessionStorage.setItem("candidates_endDate", JSON.stringify(endDate));
     sessionStorage.setItem("candidates_province", JSON.stringify(province));
+    sessionStorage.setItem("candidates_city", JSON.stringify(city));
     sessionStorage.setItem("candidates_eduLevel", JSON.stringify(eduLevel));
     sessionStorage.setItem("candidates_eduMajor", JSON.stringify(eduMajor));
     sessionStorage.setItem("candidates_gender", JSON.stringify(gender));
@@ -247,6 +254,7 @@ const CandidatesPage: React.FC = () => {
     startDate,
     endDate,
     province,
+    city,
     eduLevel,
     eduMajor,
     gender,
@@ -264,6 +272,7 @@ const CandidatesPage: React.FC = () => {
       startDate,
       endDate,
       province,
+      city,
       eduLevel,
       eduMajor,
       gender,
@@ -281,6 +290,7 @@ const CandidatesPage: React.FC = () => {
     setStartDate("");
     setEndDate("");
     setProvince([]);
+    setCity([]);
     setEduLevel([]);
     setEduMajor([]);
     setGender("");
@@ -302,6 +312,60 @@ const CandidatesPage: React.FC = () => {
     },
     staleTime: 5 * 60 * 1000,
   });
+
+  // Map selected province names -> StateId so we can query their cities.
+  // Province filter stores StateName, but /cities expects state_id.
+  const selectedProvinceIds = React.useMemo(() => {
+    const states = statesResponse?.data || [];
+    return province
+      .map(
+        (name) =>
+          states.find((s: any) => s.StateName === name)?.StateId as
+            | number
+            | undefined,
+      )
+      .filter((id): id is number => id !== undefined && id !== null);
+  }, [province, statesResponse]);
+
+  // Kabupaten/Kota options depend on the selected province(s).
+  // Fetch cities per selected province and merge them into a single list.
+  const { data: citiesResponse } = useQuery({
+    queryKey: ["cities", selectedProvinceIds],
+    enabled: selectedProvinceIds.length > 0,
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_URL;
+      const results = await Promise.all(
+        selectedProvinceIds.map((stateId) =>
+          api.get(`${baseUrl}/cities`, {
+            params: { state_id: stateId, per_page: 500 },
+          }),
+        ),
+      );
+      return results.flatMap((res) => res.data?.data || []);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Dedupe cities by name (a name can repeat across provinces) for the dropdown.
+  const cityOptions = React.useMemo(() => {
+    const seen = new Set<string>();
+    const options: { label: string; value: string }[] = [];
+    (citiesResponse || []).forEach((c: any) => {
+      const name = c?.CityName;
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        options.push({ label: name, value: name });
+      }
+    });
+    return options;
+  }, [citiesResponse]);
+
+  // When no province is selected, the city filter must be empty (and locked).
+  useEffect(() => {
+    if (province.length === 0 && city.length > 0) {
+      setCity([]);
+    }
+  }, [province, city.length]);
 
   const { data: eduLevelsResponse } = useQuery({
     queryKey: ["edulevels"],
@@ -343,6 +407,7 @@ const CandidatesPage: React.FC = () => {
       appliedFilters.startDate,
       appliedFilters.endDate,
       appliedFilters.province,
+      appliedFilters.city,
       appliedFilters.eduLevel,
       appliedFilters.eduMajor,
       appliedFilters.gender,
@@ -368,6 +433,10 @@ const CandidatesPage: React.FC = () => {
         ...(appliedFilters.province &&
           appliedFilters.province.length > 0 && {
             CanOriStateName: appliedFilters.province,
+          }),
+        ...(appliedFilters.city &&
+          appliedFilters.city.length > 0 && {
+            CanOriCityName: appliedFilters.city,
           }),
         ...(appliedFilters.eduLevel &&
           appliedFilters.eduLevel.length > 0 && {
@@ -629,6 +698,25 @@ const CandidatesPage: React.FC = () => {
                 />
               </div>
 
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Kabupaten / Kota
+                </label>
+                <MultiSelect
+                  options={cityOptions}
+                  selected={city}
+                  onChange={setCity}
+                  disabled={province.length === 0}
+                  placeholder={
+                    province.length === 0
+                      ? "Pilih provinsi dulu"
+                      : "All Kabupaten / Kota"
+                  }
+                  className="w-full transition-all"
+                  maxCount={1}
+                />
+              </div>
+
               {/* Row 2 */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -839,7 +927,9 @@ const CandidatesPage: React.FC = () => {
             <thead className="bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
               <tr className="text-[12px] font-semibold tracking-wider text-slate-500 uppercase">
                 <th className="px-6 py-4 w-40">ID Code</th>
-                <th className="px-6 py-4 md:sticky md:left-0 z-20 bg-slate-50 dark:bg-slate-900  border-slate-200 dark:border-slate-800">Name</th>
+                <th className="px-6 py-4 md:sticky md:left-0 z-20 bg-slate-50 dark:bg-slate-900  border-slate-200 dark:border-slate-800">
+                  Name
+                </th>
                 <th className="px-6 py-4">Contact Detail</th>
                 <th className="px-6 py-4">Demographics</th>
                 <th className="px-6 py-4">Education Background</th>
@@ -894,9 +984,12 @@ const CandidatesPage: React.FC = () => {
                         {candidate.CanCode || "-"}
                       </td>
                       <td className="px-6 py-4 md:sticky md:left-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-orange-50 dark:group-hover:bg-slate-800  border-slate-100 dark:border-slate-800">
-                        <div className="flex items-center gap-3 hover:cursor-pointer"   onClick={() =>
+                        <div
+                          className="flex items-center gap-3 hover:cursor-pointer"
+                          onClick={() =>
                             navigate(`/admin/candidates/${candidate.CanId}`)
-                          }>
+                          }
+                        >
                           <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
                             {candidate.photos?.[0]?.can_photo_base64 ? (
                               <img
@@ -1064,12 +1157,18 @@ const CandidatesPage: React.FC = () => {
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[13px] font-medium text-slate-700 dark:text-slate-200">
                             {candidate.CanEntryDate
-                              ? format(new Date(candidate.CanEntryDate), "dd MMM yyyy")
+                              ? format(
+                                  new Date(candidate.CanEntryDate),
+                                  "dd MMM yyyy",
+                                )
                               : "-"}
                           </span>
                           {candidate.CanEntryDate && (
                             <span className="text-[11px] text-slate-400">
-                              {format(new Date(candidate.CanEntryDate), "HH:mm")}
+                              {format(
+                                new Date(candidate.CanEntryDate),
+                                "HH:mm",
+                              )}
                             </span>
                           )}
                         </div>
@@ -1124,69 +1223,69 @@ const CandidatesPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1.5">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => handlePassedClick(candidate)}
-                                disabled={loadingPassed[candidate.CanId]}
-                                className={cn(
-                                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all",
-                                  candidate.is_passed
-                                    ? "border-orange-200 bg-[#FF6905] text-white hover:bg-[#e35e04] dark:border-orange-700"
-                                    : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
-                                  loadingPassed[candidate.CanId] &&
-                                    "opacity-50 cursor-not-allowed",
-                                )}
-                              >
-                                {loadingPassed[candidate.CanId] ? (
-                                  <span className="animate-spin w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
-                                ) : candidate.is_passed ? (
-                                  <Trophy className="w-3.5 h-3.5" />
-                                ) : (
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                )}
-                                {candidate.is_passed
-                                  ? "Lolos Seleksi"
-                                  : "Tandai Lolos"}
-                              </button>
-                            </TooltipTrigger>
-                            {candidate.is_passed && (
-                              <TooltipContent className="bg-slate-900 text-white border-slate-800 p-2 text-xs max-w-xs">
-                                <div className="flex flex-col gap-1">
-                                  <p className="font-semibold text-orange-400">
-                                    Ditandai oleh:
-                                  </p>
-                                  <p className="break-all">
-                                    {candidate.passed_by || "-"}
-                                  </p>
-                                  <p className="font-semibold text-orange-400 mt-1">
-                                    Pada:
-                                  </p>
-                                  <p>
-                                    {candidate.passed_at
-                                      ? format(
-                                          new Date(candidate.passed_at),
-                                          "PPP p",
-                                        )
-                                      : "-"}
-                                  </p>
-                                  {candidate.passed_note && (
-                                    <>
-                                      <p className="font-semibold text-orange-400 mt-1">
-                                        Catatan:
-                                      </p>
-                                      <p className="whitespace-pre-wrap">
-                                        {candidate.passed_note}
-                                      </p>
-                                    </>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePassedClick(candidate)}
+                                  disabled={loadingPassed[candidate.CanId]}
+                                  className={cn(
+                                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all",
+                                    candidate.is_passed
+                                      ? "border-orange-200 bg-[#FF6905] text-white hover:bg-[#e35e04] dark:border-orange-700"
+                                      : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+                                    loadingPassed[candidate.CanId] &&
+                                      "opacity-50 cursor-not-allowed",
                                   )}
-                                </div>
-                              </TooltipContent>
-                            )}
-                          </Tooltip>
-                        </TooltipProvider>
+                                >
+                                  {loadingPassed[candidate.CanId] ? (
+                                    <span className="animate-spin w-3 h-3 border-2 border-current border-t-transparent rounded-full" />
+                                  ) : candidate.is_passed ? (
+                                    <Trophy className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  )}
+                                  {candidate.is_passed
+                                    ? "Lolos Seleksi"
+                                    : "Tandai Lolos"}
+                                </button>
+                              </TooltipTrigger>
+                              {candidate.is_passed && (
+                                <TooltipContent className="bg-slate-900 text-white border-slate-800 p-2 text-xs max-w-xs">
+                                  <div className="flex flex-col gap-1">
+                                    <p className="font-semibold text-orange-400">
+                                      Ditandai oleh:
+                                    </p>
+                                    <p className="break-all">
+                                      {candidate.passed_by || "-"}
+                                    </p>
+                                    <p className="font-semibold text-orange-400 mt-1">
+                                      Pada:
+                                    </p>
+                                    <p>
+                                      {candidate.passed_at
+                                        ? format(
+                                            new Date(candidate.passed_at),
+                                            "PPP p",
+                                          )
+                                        : "-"}
+                                    </p>
+                                    {candidate.passed_note && (
+                                      <>
+                                        <p className="font-semibold text-orange-400 mt-1">
+                                          Catatan:
+                                        </p>
+                                        <p className="whitespace-pre-wrap">
+                                          {candidate.passed_note}
+                                        </p>
+                                      </>
+                                    )}
+                                  </div>
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </TooltipProvider>
                           {candidate.is_passed && candidate.passed_note && (
                             <span
                               className="max-w-[220px] truncate text-[11px] font-medium text-slate-500 dark:text-slate-400"
@@ -1288,52 +1387,55 @@ const CandidatesPage: React.FC = () => {
                             </>
                           )}
                         </Button>
-                        {isAdmin && <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-9 px-4 rounded-xl font-medium border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-slate-700 shadow-sm transition-all"
-                          disabled={!!loadingApply[candidate.CanId]}
-                          onClick={async () => {
-                            setLoadingApply((prev) => ({
-                              ...prev,
-                              [candidate.CanId]: true,
-                            }));
-                            try {
-                              const res = await postApplyToSqlServer(
-                                candidate.CanId,
-                              );
-                              if (res.success) {
-                                toast.success(
-                                  res.message || "Berhasil apply ke SQL Server",
-                                );
-                                refetch();
-                              } else {
-                                toast.error(
-                                  res.message || "Gagal apply ke SQL Server",
-                                );
-                              }
-                            } catch (err) {
-                              toast.error("Gagal apply ke SQL Server");
-                            } finally {
+                        {isAdmin && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-9 px-4 rounded-xl font-medium border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-green-50 hover:text-green-600 hover:border-green-200 dark:hover:bg-slate-700 shadow-sm transition-all"
+                            disabled={!!loadingApply[candidate.CanId]}
+                            onClick={async () => {
                               setLoadingApply((prev) => ({
                                 ...prev,
-                                [candidate.CanId]: false,
+                                [candidate.CanId]: true,
                               }));
-                            }
-                          }}
-                        >
-                          {loadingApply[candidate.CanId] ? (
-                            <span className="flex items-center">
-                              <span className="animate-spin mr-2 w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full"></span>
-                              Loading...
-                            </span>
-                          ) : (
-                            <>
-                              <Download className="w-4 h-4 mr-2" /> Apply ke SQL
-                              Server
-                            </>
-                          )}
-                        </Button>}
+                              try {
+                                const res = await postApplyToSqlServer(
+                                  candidate.CanId,
+                                );
+                                if (res.success) {
+                                  toast.success(
+                                    res.message ||
+                                      "Berhasil apply ke SQL Server",
+                                  );
+                                  refetch();
+                                } else {
+                                  toast.error(
+                                    res.message || "Gagal apply ke SQL Server",
+                                  );
+                                }
+                              } catch (err) {
+                                toast.error("Gagal apply ke SQL Server");
+                              } finally {
+                                setLoadingApply((prev) => ({
+                                  ...prev,
+                                  [candidate.CanId]: false,
+                                }));
+                              }
+                            }}
+                          >
+                            {loadingApply[candidate.CanId] ? (
+                              <span className="flex items-center">
+                                <span className="animate-spin mr-2 w-4 h-4 border-2 border-green-500 border-t-transparent rounded-full"></span>
+                                Loading...
+                              </span>
+                            ) : (
+                              <>
+                                <Download className="w-4 h-4 mr-2" /> Apply ke
+                                SQL Server
+                              </>
+                            )}
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
