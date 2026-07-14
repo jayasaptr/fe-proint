@@ -167,6 +167,8 @@ export const ApplyJobModal = ({
   const [isLoadingRaces, setIsLoadingRaces] = useState(false);
 
   const [captchaSiteKey, setCaptchaSiteKey] = useState<string | null>(null);
+  // null = config belum dimuat, true/false = feature flag dari backend
+  const [captchaEnabled, setCaptchaEnabled] = useState<boolean | null>(null);
 
   const [eduLevels, setEduLevels] = useState<
     { EduLvlId: number; EduLvlCode: string; EduLvlName: string }[]
@@ -351,11 +353,18 @@ export const ApplyJobModal = ({
   React.useEffect(() => {
     getCaptchaConfig()
       .then((res) => {
-        if (res.success && res.data.site_key) {
-          setCaptchaSiteKey(res.data.site_key);
-        }
+        // Feature flag: ikuti nilai `enabled` dari backend, jangan hardcode.
+        const enabled = res.success && res.data.enabled === true;
+        setCaptchaEnabled(enabled);
+        setCaptchaSiteKey(enabled ? res.data.site_key : null);
       })
-      .catch(console.error);
+      .catch((error) => {
+        // Jika config gagal dimuat, jangan blokir pelamar selamanya —
+        // anggap captcha off; backend tetap memvalidasi bila memang aktif.
+        console.error(error);
+        setCaptchaEnabled(false);
+        setCaptchaSiteKey(null);
+      });
   }, []);
 
   React.useEffect(() => {
@@ -799,7 +808,7 @@ export const ApplyJobModal = ({
       return;
     }
 
-    if (!captchaToken) {
+    if (captchaEnabled && !captchaToken) {
       toast.error("Silakan selesaikan verifikasi Captcha.");
       return;
     }
@@ -909,7 +918,9 @@ export const ApplyJobModal = ({
         }
       });
 
-      data.append("captcha_token", captchaToken);
+      if (captchaToken) {
+        data.append("captcha_token", captchaToken);
+      }
 
       const res = await submitApplication(data);
       if (res.success) {
@@ -2249,30 +2260,33 @@ export const ApplyJobModal = ({
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-center">
-                {captchaSiteKey ? (
-                  <Turnstile
-                    sitekey={captchaSiteKey}
-                    onLoad={(_, boundTurnstile) =>
-                      setTurnstileInstance(boundTurnstile)
-                    }
-                    onVerify={(token) => setCaptchaToken(token)}
-                    onError={() => {
-                      toast.error(
-                        "Verifikasi Captcha gagal. Silakan coba lagi.",
-                      );
-                      setCaptchaToken(null);
-                    }}
-                    theme="light"
-                    size="normal"
-                  />
-                ) : (
-                  <div className="text-sm text-slate-500 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Memuat
-                    Captcha...
-                  </div>
-                )}
-              </div>
+              {/* Captcha hanya ditampilkan bila diaktifkan backend (feature flag) */}
+              {captchaEnabled !== false && (
+                <div className="pt-4 flex justify-center">
+                  {captchaEnabled && captchaSiteKey ? (
+                    <Turnstile
+                      sitekey={captchaSiteKey}
+                      onLoad={(_, boundTurnstile) =>
+                        setTurnstileInstance(boundTurnstile)
+                      }
+                      onVerify={(token) => setCaptchaToken(token)}
+                      onError={() => {
+                        toast.error(
+                          "Verifikasi Captcha gagal. Silakan coba lagi.",
+                        );
+                        setCaptchaToken(null);
+                      }}
+                      theme="light"
+                      size="normal"
+                    />
+                  ) : (
+                    <div className="text-sm text-slate-500 flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Memuat
+                      Captcha...
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
           </div>
 
@@ -2289,7 +2303,11 @@ export const ApplyJobModal = ({
             <Button
               type="submit"
               form="apply-form"
-              disabled={isSubmitting || !captchaToken}
+              disabled={
+                isSubmitting ||
+                captchaEnabled === null ||
+                (captchaEnabled === true && !captchaToken)
+              }
               className="flex-[2] h-12 bg-primary text-primary-foreground rounded-xl font-semibold shadow-lg hover:bg-primary/90 transition-all flex items-center justify-center"
             >
               {isSubmitting ? (
