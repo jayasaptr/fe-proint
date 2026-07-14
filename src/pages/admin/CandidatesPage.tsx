@@ -1,3 +1,4 @@
+import CandidateImportDialog from "@/components/CandidateImportDialog";
 import { TablePagination } from "@/components/TablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ import {
   Copy,
   Download,
   Eye,
+  FileSpreadsheet,
   Filter,
   Mail,
   Phone,
@@ -183,6 +185,9 @@ const CandidatesPage: React.FC = () => {
   const [passedNote, setPassedNote] = useState<string>(() =>
     getSessionState("candidates_passedNote", ""),
   );
+
+  // Bulk import via Excel
+  const [importOpen, setImportOpen] = useState(false);
 
   // Applied Filter states (for API)
   const defaultAppliedFilters = {
@@ -610,6 +615,16 @@ const CandidatesPage: React.FC = () => {
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
             <div className="flex items-center gap-2 w-full sm:w-auto">
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  onClick={() => setImportOpen(true)}
+                  className="h-11 px-4 rounded-xl font-medium shadow-sm sm:flex flex-1 sm:flex-none transition-all border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 dark:hover:bg-slate-800"
+                >
+                  <FileSpreadsheet className="w-4 h-4 sm:mr-2" />{" "}
+                  <span className="hidden sm:inline">Import Excel</span>
+                </Button>
+              )}
               <Button
                 variant={showFilters ? "default" : "outline"}
                 onClick={() => setShowFilters(!showFilters)}
@@ -1457,6 +1472,12 @@ const CandidatesPage: React.FC = () => {
           />
         </div>
       </div>
+
+      <CandidateImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={refetch}
+      />
 
       <Dialog
         open={!!passedDialogCandidate}

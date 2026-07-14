@@ -552,6 +552,78 @@ export const downloadCandidateAttachments = async (
   };
 };
 
+// ---- Bulk Import via Excel ----
+
+export interface CandidateImportRow {
+  row: number;
+  status: "imported" | "failed";
+  candidate_id?: number;
+  email?: string;
+  errors?: Record<string, string[]>;
+}
+
+export interface CandidateImportData {
+  total: number;
+  imported: number;
+  failed: number;
+  rows: CandidateImportRow[];
+}
+
+export interface CandidateImportResponse {
+  success: boolean;
+  message: string;
+  data: CandidateImportData;
+}
+
+/**
+ * Download the Excel import template (.xlsx) and trigger a browser download.
+ * The response is a binary file, so it MUST be requested as a blob.
+ */
+export const downloadCandidateImportTemplate = async (): Promise<void> => {
+  const response = await api.get(
+    `${localApiBaseUrl}/candidates/import/template`,
+    { responseType: "blob" },
+  );
+
+  // Prefer the filename provided by the backend via Content-Disposition.
+  const disposition = response.headers["content-disposition"] ?? "";
+  const match = disposition.match(/filename\*?="?([^";]+)"?/i);
+  const filename = match?.[1]
+    ? decodeURIComponent(match[1])
+    : "template_import_candidate.xlsx";
+
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+/**
+ * Upload an Excel file and import candidates row by row.
+ * Import is partial: valid rows are saved even if others fail.
+ */
+export const importCandidates = async (
+  file: File,
+): Promise<CandidateImportResponse> => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await api.post<CandidateImportResponse>(
+    `${localApiBaseUrl}/candidates/import`,
+    formData,
+    {
+      // Let axios set the multipart boundary automatically; only override
+      // the JSON default from the shared instance.
+      headers: { "Content-Type": "multipart/form-data" },
+    },
+  );
+  return response.data;
+};
+
 export const toggleCandidateChecklist = async (
   canId: string | number,
 ): Promise<{
