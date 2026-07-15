@@ -56,6 +56,7 @@ import {
   Eye,
   Filter,
   Mail,
+  MapPin,
   Phone,
   Search,
   Trophy,
@@ -113,6 +114,23 @@ const getPrimaryExpectedJob = (candidate: Candidate) => {
     (j: any) => String(j.Priority) === "1",
   );
   return priorityJob || candidate.job_expected[0];
+};
+
+// Combine residential city + province into a single readable label.
+// Falls back to the original/ID address when residential data is missing.
+const getAddressCity = (candidate: Candidate) => {
+  const addr = candidate.addresses?.[0];
+  if (!addr) return "-";
+  const city = addr.CanResCityName || addr.CanOriCityName;
+  const state = addr.CanResStateName || addr.CanOriStateName;
+  if (!city && !state) return "-";
+  return [city, state].filter(Boolean).join(", ");
+};
+
+const getAddressDetail = (candidate: Candidate) => {
+  const addr = candidate.addresses?.[0];
+  if (!addr) return "-";
+  return addr.CanResAddress || addr.CanOriAddress || "-";
 };
 // --- Session Storage Helper ---
 const getSessionState = (key: string, defaultValue: any) => {
@@ -508,6 +526,10 @@ const CandidatesPage: React.FC = () => {
   const [passedNoteInput, setPassedNoteInput] = useState<string>("");
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Modal state for reading the full (long) address of a candidate
+  const [addressModalCandidate, setAddressModalCandidate] =
+    useState<Candidate | null>(null);
 
   const handleCopy = async (value: string, key: string, label: string) => {
     if (!value || value === "-") return;
@@ -932,6 +954,7 @@ const CandidatesPage: React.FC = () => {
                 </th>
                 <th className="px-6 py-4">Contact Detail</th>
                 <th className="px-6 py-4">Demographics</th>
+                <th className="px-6 py-4">Address</th>
                 <th className="px-6 py-4">Education Background</th>
                 <th className="px-6 py-4">Applied Job</th>
                 <th className="px-6 py-4">Status Apply</th>
@@ -944,7 +967,7 @@ const CandidatesPage: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={11}>
+                  <td colSpan={12}>
                     <div className="flex flex-col items-center justify-center gap-4 py-24">
                       <Activity className="w-8 h-8 text-orange-500 animate-pulse" />
                       <p className="text-sm font-semibold text-slate-400 tracking-wider uppercase">
@@ -955,7 +978,7 @@ const CandidatesPage: React.FC = () => {
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={11}>
+                  <td colSpan={12}>
                     <div className="flex flex-col items-center justify-center gap-3 py-24">
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
                         <Search className="w-8 h-8 text-slate-300" />
@@ -1095,6 +1118,33 @@ const CandidatesPage: React.FC = () => {
                             {dob}
                           </span>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {getAddressCity(candidate) !== "-" ||
+                        getAddressDetail(candidate) !== "-" ? (
+                          <button
+                            type="button"
+                            onClick={() => setAddressModalCandidate(candidate)}
+                            className="group/addr flex items-start gap-2 max-w-[260px] text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-orange-100/60 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                            title="Klik untuk lihat detail alamat"
+                          >
+                            <MapPin className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-medium text-slate-700 dark:text-slate-200 text-[13px] group-hover/addr:text-orange-600 dark:group-hover/addr:text-orange-400 transition-colors">
+                                {getAddressCity(candidate)}
+                              </span>
+                              {getAddressDetail(candidate) !== "-" && (
+                                <span className="text-xs font-medium text-slate-500 whitespace-normal line-clamp-2">
+                                  {getAddressDetail(candidate)}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ) : (
+                          <span className="text-sm font-medium text-slate-400 italic">
+                            No Data
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         {getLastEducation(candidate) !== "-" ? (
@@ -1521,6 +1571,96 @@ const CandidatesPage: React.FC = () => {
               Tandai Lolos
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Address Detail Modal */}
+      <Dialog
+        open={!!addressModalCandidate}
+        onOpenChange={(open) => {
+          if (!open) setAddressModalCandidate(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-orange-500" />
+              Detail Alamat
+            </DialogTitle>
+            <DialogDescription>
+              {addressModalCandidate?.CanName || "Kandidat"}
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const addr = addressModalCandidate?.addresses?.[0];
+            if (!addr) {
+              return (
+                <p className="text-sm text-slate-400 italic">
+                  Tidak ada data alamat.
+                </p>
+              );
+            }
+            const resCity = [addr.CanResCityName, addr.CanResStateName]
+              .filter(Boolean)
+              .join(", ");
+            const oriCity = [addr.CanOriCityName, addr.CanOriStateName]
+              .filter(Boolean)
+              .join(", ");
+            const hasOri = Boolean(addr.CanOriAddress || addr.CanOriCityName);
+            return (
+              <div className="flex flex-col gap-6 max-h-[60vh] overflow-y-auto">
+                {/* Residential Address */}
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                    Residential Address (Current)
+                  </h4>
+                  <p className="font-bold text-slate-800 dark:text-slate-200">
+                    {resCity || "Unknown City"}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-2 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800 whitespace-pre-wrap break-words">
+                    {addr.CanResAddress || "-"}
+                    {addr.CanResZipCode && (
+                      <span className="block mt-1 font-semibold text-slate-600 dark:text-slate-400">
+                        Zip Code: {addr.CanResZipCode}
+                      </span>
+                    )}
+                  </p>
+                  {addr.CanResPhone && (
+                    <p className="text-sm text-slate-500 mt-2 flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5" /> Residential Phone:{" "}
+                      <span className="font-semibold">{addr.CanResPhone}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Original / ID Address */}
+                {hasOri && (
+                  <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                    <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                      Original / ID Address
+                    </h4>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">
+                      {oriCity || "Unknown City"}
+                    </p>
+                    <p className="text-sm text-slate-500 mt-2 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800 whitespace-pre-wrap break-words">
+                      {addr.CanOriAddress || "-"}
+                      {addr.CanOriZipCode && (
+                        <span className="block mt-1 font-semibold text-slate-600 dark:text-slate-400">
+                          Zip Code: {addr.CanOriZipCode}
+                        </span>
+                      )}
+                    </p>
+                    {addr.CanOriPhone && (
+                      <p className="text-sm text-slate-500 mt-2 flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5" /> Original Phone:{" "}
+                        <span className="font-semibold">{addr.CanOriPhone}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
