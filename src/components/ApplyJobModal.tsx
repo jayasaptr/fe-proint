@@ -833,10 +833,27 @@ export const ApplyJobModal = ({
       const data = new FormData();
       data.append("job_id", vacancy.VacantPosId.toString());
       Object.entries(formData).forEach(([key, value]) => {
+        // birth_city_id is handled separately below because it may hold either
+        // a numeric CityId (picked from the list) or free text (manual input).
+        if (key === "birth_city_id") return;
         if (value !== "" && value !== undefined && value !== null) {
           data.append(key, value.toString());
         }
       });
+
+      // Birth place: numeric id => known city, free text => manual entry.
+      if (formData.birth_city_id) {
+        const isKnownCity = !isNaN(Number(formData.birth_city_id));
+        const matchedCity = birthCities.find(
+          (c) => c.CityId.toString() === formData.birth_city_id,
+        );
+        if (isKnownCity) {
+          data.append("CanCityBirthId", formData.birth_city_id);
+          data.append("CanCityBirthName", matchedCity?.CityName || "");
+        } else {
+          data.append("CanCityBirthName", formData.birth_city_id);
+        }
+      }
 
       // Append question answers
       const answers = Object.entries(questionAnswers)
@@ -877,15 +894,26 @@ export const ApplyJobModal = ({
         JSON.stringify(
           educations
             .filter((e) => e.edu_level_id && e.edu_institution_id)
-            .map((e) => ({
-              edu_level_id: Number(e.edu_level_id),
-              edu_institution_id: isNaN(Number(e.edu_institution_id))
-                ? e.edu_institution_id
-                : Number(e.edu_institution_id),
-              major: e.major,
-              gpa: e.gpa ? parseFloat(e.gpa) : null,
-              is_last_education: e.is_last_education,
-            })),
+            .map((e) => {
+              // edu_institution_id holds either a numeric ID (picked from the
+              // list) or free text (manual input for an institution not found).
+              const isKnownInstitution = !isNaN(Number(e.edu_institution_id));
+              const matched = eduInstitutions.find(
+                (i) => i.EduInsId.toString() === e.edu_institution_id,
+              );
+              return {
+                edu_level_id: Number(e.edu_level_id),
+                edu_institution_id: isKnownInstitution
+                  ? Number(e.edu_institution_id)
+                  : null,
+                eduInsName: isKnownInstitution
+                  ? matched?.EduInsName || ""
+                  : e.edu_institution_id,
+                major: e.major,
+                gpa: e.gpa ? parseFloat(e.gpa) : null,
+                is_last_education: e.is_last_education,
+              };
+            }),
         ),
       );
       data.append(
@@ -1026,7 +1054,22 @@ export const ApplyJobModal = ({
                     <Label htmlFor="place_of_birth">Tempat Lahir*</Label>
                     <Popover
                       open={openBirthCity}
-                      onOpenChange={setOpenBirthCity}
+                      onOpenChange={(open) => {
+                        setOpenBirthCity(open);
+                        if (
+                          !open &&
+                          searchBirthCity &&
+                          !birthCities.some(
+                            (c) =>
+                              c.CityName.toLowerCase() ===
+                              searchBirthCity.toLowerCase(),
+                          )
+                        ) {
+                          // Allow manual input if closing the popover and there's
+                          // text typed that isn't exactly in the list.
+                          handleSelectChange("birth_city_id", searchBirthCity);
+                        }
+                      }}
                     >
                       <PopoverTrigger asChild>
                         <Button
@@ -1035,6 +1078,14 @@ export const ApplyJobModal = ({
                           aria-expanded={openBirthCity}
                           className="w-full justify-between font-normal px-3 bg-transparent"
                           id="place_of_birth"
+                          onClick={() =>
+                            setSearchBirthCity(
+                              birthCities.find(
+                                (c) =>
+                                  c.CityId.toString() === formData.birth_city_id,
+                              )?.CityName || formData.birth_city_id,
+                            )
+                          }
                         >
                           {formData.birth_city_id ? (
                             birthCities.find(
@@ -1067,7 +1118,17 @@ export const ApplyJobModal = ({
                             {!isLoadingBirthCities &&
                               birthCities.length === 0 && (
                                 <CommandEmpty>
-                                  Kota tidak ditemukan.
+                                  {searchBirthCity ? (
+                                    <span className="block px-3 text-slate-600 wrap-break-word whitespace-normal">
+                                      Kota tidak ditemukan. Nama{" "}
+                                      <span className="font-semibold text-primary break-all">
+                                        "{searchBirthCity}"
+                                      </span>{" "}
+                                      akan disimpan sebagai input manual.
+                                    </span>
+                                  ) : (
+                                    "Kota tidak ditemukan."
+                                  )}
                                 </CommandEmpty>
                               )}
                             <CommandGroup>
@@ -1840,8 +1901,17 @@ export const ApplyJobModal = ({
                               {!isLoadingInstitutions &&
                                 eduInstitutions.length === 0 && (
                                   <CommandEmpty>
-                                    Institusi tidak ditemukan. Ketik untuk
-                                    mencari.
+                                    {searchInstitution ? (
+                                      <span className="block px-3 text-slate-600 wrap-break-word whitespace-normal">
+                                        Institusi tidak ditemukan. Nama{" "}
+                                        <span className="font-semibold text-primary break-all">
+                                          "{searchInstitution}"
+                                        </span>{" "}
+                                         akan disimpan sebagai input manual.
+                                      </span>
+                                    ) : (
+                                      "Institusi tidak ditemukan. Ketik untuk mencari."
+                                    )}
                                   </CommandEmpty>
                                 )}
                               <CommandGroup>

@@ -107,7 +107,7 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "flex w-full h-10 items-center justify-between gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm shadow-sm transition-all outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50",
+            "flex w-full h-10 items-center justify-between gap-2 rounded-md border-0 bg-white dark:bg-slate-900 px-3 py-2 text-sm shadow-none transition-all outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}
         >
