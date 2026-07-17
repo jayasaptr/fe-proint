@@ -388,6 +388,7 @@ export interface CandidateFilters {
   per_page?: number;
   EduLevel?: string | number | (string | number)[];
   CanOriStateName?: string | string[];
+  CanOriCityName?: string | string[];
   EduMjrName?: string | string[];
   is_checked?: string | boolean | number;
   is_passed?: string | boolean | number;
@@ -437,6 +438,8 @@ export const getCandidates = async (
   if (filters.EduLevel) addParam("EduLevel", filters.EduLevel);
   if (filters.CanOriStateName)
     addParam("CanOriStateName", filters.CanOriStateName);
+  if (filters.CanOriCityName)
+    addParam("CanOriCityName", filters.CanOriCityName);
   if (filters.EduMjrName) addParam("EduMjrName", filters.EduMjrName);
 
   // Add dynamic filters
@@ -456,6 +459,7 @@ export const getCandidates = async (
     "per_page",
     "EduLevel",
     "CanOriStateName",
+    "CanOriCityName",
     "EduMjrName",
     "is_checked",
     "is_passed",

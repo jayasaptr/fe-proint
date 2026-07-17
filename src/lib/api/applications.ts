@@ -122,8 +122,10 @@ export interface CheckApplicationResponse {
 export interface CaptchaConfigResponse {
   success: boolean;
   data: {
-    site_key: string;
-    verify_url: string;
+    enabled: boolean;
+    site_key: string | null;
+    provider?: string;
+    verify_url?: string;
   };
 }
 
