@@ -516,12 +516,15 @@ export const previewCandidateDocument = async (
   );
 
   const blob: Blob = response.data;
+  const contentType = response.headers["content-type"];
   const mimeType =
-    response.headers["content-type"]?.split(";")[0]?.trim() ||
+    (typeof contentType === "string"
+      ? contentType.split(";")[0]?.trim()
+      : undefined) ||
     blob.type ||
     "application/octet-stream";
 
-  const disposition = response.headers["content-disposition"] ?? "";
+  const disposition = String(response.headers["content-disposition"] ?? "");
   const match = disposition.match(/filename\*?="?([^";]+)"?/i);
   const filename = match?.[1] ? decodeURIComponent(match[1]) : null;
 
@@ -545,6 +548,33 @@ export const downloadCandidateAttachments = async (
   const disposition = response.headers["content-disposition"] ?? "";
   const match = disposition.match(/filename="?([^"]+)"?/);
   const filename = match?.[1] ?? `candidate-${canId}-attachments.zip`;
+
+  return {
+    blob: response.data,
+    filename,
+  };
+};
+
+// Export kandidat berdasarkan rentang tanggal (start_date & end_date, format YYYY-MM-DD).
+// Backend route: GET /api/admin/candidates/export
+export const exportCandidates = async (
+  startDate: string,
+  endDate: string,
+): Promise<{ blob: Blob; filename: string }> => {
+  const response = await api.get(`${localApiBaseUrl}/admin/candidates/export`, {
+    params: {
+      start_date: startDate,
+      end_date: endDate,
+    },
+    responseType: "blob",
+  });
+
+  // Extract filename from Content-Disposition header, fallback to a sensible default
+  const disposition = String(response.headers["content-disposition"] ?? "");
+  const match = disposition.match(/filename\*?="?([^";]+)"?/i);
+  const filename = match?.[1]
+    ? decodeURIComponent(match[1])
+    : `candidates-${startDate}-to-${endDate}.xlsx`;
 
   return {
     blob: response.data,

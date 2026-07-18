@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   downloadCandidateAttachments,
+  exportCandidates,
   getCandidates,
   postApplyToSqlServer,
   toggleCandidateChecklist,
@@ -54,7 +55,9 @@ import {
   Copy,
   Download,
   Eye,
+  FileSpreadsheet,
   Filter,
+  Loader2,
   Mail,
   MapPin,
   Phone,
@@ -531,6 +534,49 @@ const CandidatesPage: React.FC = () => {
   const [addressModalCandidate, setAddressModalCandidate] =
     useState<Candidate | null>(null);
 
+  // Export dialog state (date range). Default to today for both start & end.
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState<string>(todayStr);
+  const [exportEndDate, setExportEndDate] = useState<string>(todayStr);
+  const [loadingExport, setLoadingExport] = useState(false);
+
+  const handleExport = async () => {
+    if (!exportStartDate || !exportEndDate) {
+      toast.error("Please select both start date and end date");
+      return;
+    }
+    if (exportStartDate > exportEndDate) {
+      toast.error("Start date cannot be later than end date");
+      return;
+    }
+
+    setLoadingExport(true);
+    try {
+      const { blob, filename } = await exportCandidates(
+        exportStartDate,
+        exportEndDate,
+      );
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Candidates exported successfully");
+      setExportDialogOpen(false);
+    } catch (err) {
+      const e = err as any;
+      toast.error(
+        e?.response?.data?.message || "Failed to export candidates",
+      );
+    } finally {
+      setLoadingExport(false);
+    }
+  };
+
   const handleCopy = async (value: string, key: string, label: string) => {
     if (!value || value === "-") return;
     try {
@@ -632,6 +678,19 @@ const CandidatesPage: React.FC = () => {
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
             <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Reset date range to today each time the dialog opens
+                  setExportStartDate(todayStr);
+                  setExportEndDate(todayStr);
+                  setExportDialogOpen(true);
+                }}
+                className="h-11 px-4 rounded-xl font-medium shadow-sm sm:flex flex-1 sm:flex-none transition-all border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <FileSpreadsheet className="w-4 h-4 sm:mr-2" />{" "}
+                <span className="hidden sm:inline">Export</span>
+              </Button>
               <Button
                 variant={showFilters ? "default" : "outline"}
                 onClick={() => setShowFilters(!showFilters)}
@@ -1507,6 +1566,129 @@ const CandidatesPage: React.FC = () => {
           />
         </div>
       </div>
+
+      {/* Export candidates dialog (date range) */}
+      <Dialog
+        open={exportDialogOpen}
+        onOpenChange={(open) => {
+          if (!loadingExport) setExportDialogOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-orange-500" />
+              Export Candidates
+            </DialogTitle>
+            <DialogDescription>
+              Pilih rentang tanggal untuk mengekspor data kandidat.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Start Date
+              </label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700",
+                      !exportStartDate && "text-slate-500 dark:text-slate-400",
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {exportStartDate ? (
+                      format(new Date(exportStartDate + "T00:00:00"), "PPP")
+                    ) : (
+                      <span>Pick Start Date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={
+                      exportStartDate
+                        ? new Date(exportStartDate + "T00:00:00")
+                        : undefined
+                    }
+                    onSelect={(date) =>
+                      setExportStartDate(date ? format(date, "yyyy-MM-dd") : "")
+                    }
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                End Date
+              </label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700",
+                      !exportEndDate && "text-slate-500 dark:text-slate-400",
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {exportEndDate ? (
+                      format(new Date(exportEndDate + "T00:00:00"), "PPP")
+                    ) : (
+                      <span>Pick End Date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={
+                      exportEndDate
+                        ? new Date(exportEndDate + "T00:00:00")
+                        : undefined
+                    }
+                    onSelect={(date) =>
+                      setExportEndDate(date ? format(date, "yyyy-MM-dd") : "")
+                    }
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExportDialogOpen(false)}
+              disabled={loadingExport}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExport}
+              disabled={loadingExport}
+              className="bg-orange-500 hover:bg-orange-600 text-white"
+            >
+              {loadingExport ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" /> Export
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!passedDialogCandidate}
