@@ -516,8 +516,9 @@ export const previewCandidateDocument = async (
   );
 
   const blob: Blob = response.data;
+  const contentType = String(response.headers["content-type"] ?? "");
   const mimeType =
-    response.headers["content-type"]?.split(";")[0]?.trim() ||
+    contentType.split(";")[0]?.trim() ||
     blob.type ||
     "application/octet-stream";
 

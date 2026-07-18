@@ -5,6 +5,7 @@ import "@react-pdf-viewer/core/lib/styles/index.css";
 import "@react-pdf-viewer/default-layout/lib/styles/index.css";
 import { renderAsync as renderDocx } from "docx-preview";
 import { Download, FileText, Loader2 } from "lucide-react";
+import { version as pdfjsVersion } from "pdfjs-dist";
 import {
   useEffect,
   useRef,
@@ -13,9 +14,10 @@ import {
 } from "react";
 import * as XLSX from "xlsx";
 
-// Pin pdfjs worker version to the installed pdfjs-dist version.
-const PDFJS_WORKER_URL =
-  "https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js";
+// Derive the worker URL from the actually installed pdfjs-dist version so the
+// worker never drifts from the API version (avoids the
+// "API version does not match the Worker version" runtime error).
+const PDFJS_WORKER_URL = `https://unpkg.com/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.js`;
 
 type DocumentKind =
   | "pdf"
