@@ -44,7 +44,7 @@ import {
 import api from "@/lib/axios";
 import { cn } from "@/lib/utils";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { endOfMonth, format, startOfMonth } from "date-fns";
 import {
   Activity,
   Award,
@@ -52,6 +52,8 @@ import {
   Calendar as CalendarIcon,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   Eye,
@@ -534,29 +536,37 @@ const CandidatesPage: React.FC = () => {
   const [addressModalCandidate, setAddressModalCandidate] =
     useState<Candidate | null>(null);
 
-  // Export dialog state (date range). Default to today for both start & end.
+  // Export dialog state. Export is scoped to a single month (max range: 1 month).
+  // We keep the selected month as "yyyy-MM" and derive the start/end dates
+  // (first & last day of that month) when exporting.
+  const currentMonthStr = format(new Date(), "yyyy-MM");
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportStartDate, setExportStartDate] = useState<string>(todayStr);
-  const [exportEndDate, setExportEndDate] = useState<string>(todayStr);
+  const [exportMonth, setExportMonth] = useState<string>(currentMonthStr);
   const [loadingExport, setLoadingExport] = useState(false);
+  // Whether the month-picker popover is open, and which year its grid shows
+  // (navigated independently from the selected month via the arrows).
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState<number>(() =>
+    new Date().getFullYear(),
+  );
 
   const handleExport = async () => {
-    if (!exportStartDate || !exportEndDate) {
-      toast.error("Please select both start date and end date");
+    if (!exportMonth) {
+      toast.error("Please select a month");
       return;
     }
-    if (exportStartDate > exportEndDate) {
-      toast.error("Start date cannot be later than end date");
-      return;
-    }
+
+    const baseDate = new Date(exportMonth + "-01T00:00:00");
+    const startDate = format(startOfMonth(baseDate), "yyyy-MM-dd");
+    // If the selected month is the current (ongoing) month, cap the end date at
+    // today instead of the last day of the month — the rest hasn't happened yet.
+    const lastDayStr = format(endOfMonth(baseDate), "yyyy-MM-dd");
+    const endDate = exportMonth === currentMonthStr ? todayStr : lastDayStr;
 
     setLoadingExport(true);
     try {
-      const { blob, filename } = await exportCandidates(
-        exportStartDate,
-        exportEndDate,
-      );
+      const { blob, filename } = await exportCandidates(startDate, endDate);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -681,9 +691,9 @@ const CandidatesPage: React.FC = () => {
               <Button
                 variant="outline"
                 onClick={() => {
-                  // Reset date range to today each time the dialog opens
-                  setExportStartDate(todayStr);
-                  setExportEndDate(todayStr);
+                  // Reset to the current month each time the dialog opens
+                  setExportMonth(currentMonthStr);
+                  setPickerYear(new Date().getFullYear());
                   setExportDialogOpen(true);
                 }}
                 className="h-11 px-4 rounded-xl font-medium shadow-sm sm:flex flex-1 sm:flex-none transition-all border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -1581,87 +1591,113 @@ const CandidatesPage: React.FC = () => {
               Export Candidates
             </DialogTitle>
             <DialogDescription>
-              Pilih rentang tanggal untuk mengekspor data kandidat.
+              Pilih bulan untuk mengekspor data kandidat. Data yang diekspor
+              mencakup satu bulan penuh (maksimal rentang 1 bulan).
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Start Date
-              </label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700",
-                      !exportStartDate && "text-slate-500 dark:text-slate-400",
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {exportStartDate ? (
-                      format(new Date(exportStartDate + "T00:00:00"), "PPP")
-                    ) : (
-                      <span>Pick Start Date</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={
-                      exportStartDate
-                        ? new Date(exportStartDate + "T00:00:00")
-                        : undefined
-                    }
-                    onSelect={(date) =>
-                      setExportStartDate(date ? format(date, "yyyy-MM-dd") : "")
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+          {(() => {
+            // exportMonth is "yyyy-MM"; split into year & month index (0-based).
+            const [selectedYear, selectedMonthNo] = exportMonth
+              .split("-")
+              .map((v) => Number(v));
+            const selectedMonthIdx = selectedMonthNo - 1;
 
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                End Date
-              </label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700",
-                      !exportEndDate && "text-slate-500 dark:text-slate-400",
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {exportEndDate ? (
-                      format(new Date(exportEndDate + "T00:00:00"), "PPP")
-                    ) : (
-                      <span>Pick End Date</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={
-                      exportEndDate
-                        ? new Date(exportEndDate + "T00:00:00")
-                        : undefined
-                    }
-                    onSelect={(date) =>
-                      setExportEndDate(date ? format(date, "yyyy-MM-dd") : "")
-                    }
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
+            const now = new Date();
+            const thisYear = now.getFullYear();
+            const thisMonthIdx = now.getMonth();
+
+            const monthShort = Array.from({ length: 12 }, (_, i) =>
+              format(new Date(2000, i, 1), "MMM"),
+            );
+
+            const selectMonth = (monthIdx: number) => {
+              setExportMonth(
+                `${pickerYear}-${String(monthIdx + 1).padStart(2, "0")}`,
+              );
+              setMonthPickerOpen(false);
+            };
+
+            return (
+              <div className="flex flex-col gap-2 py-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Month
+                </label>
+                <Popover
+                  open={monthPickerOpen}
+                  onOpenChange={setMonthPickerOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start text-left font-normal h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
+                      {format(
+                        new Date(selectedYear, selectedMonthIdx, 1),
+                        "MMMM yyyy",
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-3" align="start">
+                    {/* Year navigation */}
+                    <div className="flex items-center justify-between mb-3">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setPickerYear((y) => y - 1)}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-sm font-semibold">
+                        {pickerYear}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={pickerYear >= thisYear}
+                        onClick={() => setPickerYear((y) => y + 1)}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Month grid */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {monthShort.map((name, i) => {
+                        const isFuture =
+                          pickerYear > thisYear ||
+                          (pickerYear === thisYear && i > thisMonthIdx);
+                        const isSelected =
+                          pickerYear === selectedYear &&
+                          i === selectedMonthIdx;
+                        return (
+                          <Button
+                            key={name}
+                            type="button"
+                            variant={isSelected ? "default" : "ghost"}
+                            disabled={isFuture}
+                            onClick={() => selectMonth(i)}
+                            className={cn(
+                              "h-9 text-sm font-normal",
+                              isSelected &&
+                                "bg-orange-500 hover:bg-orange-600 text-white",
+                            )}
+                          >
+                            {name}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            );
+          })()}
 
           <DialogFooter>
             <Button
