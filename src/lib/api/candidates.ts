@@ -134,9 +134,13 @@ export interface CandidateExperience {
 }
 
 export interface CandidateIdentity {
+  CanCardId?: number;
   CardTypeId?: number | string;
   CardTypeName?: string;
   CardNumber?: string;
+  CardPublisher?: string | null;
+  CardExpired?: string | null;
+  CardFgDefault?: "Y" | "N" | null;
   number?: string;
   card_type_name?: string;
   type?: {
@@ -252,14 +256,24 @@ export interface CandidateJobExpected {
 }
 
 export interface CandidateSkill {
+  CanSkillId?: number;
+  SkillId?: number | string | null;
   SkillName?: string;
+  SkillDesc?: string | null;
   SkillLevel?: string | null;
+  CriteriaId?: number | string | null;
   [key: string]: unknown;
 }
 
 export interface CandidateLanguage {
+  CanLangId?: number;
+  LangId?: number | string | null;
   LangName?: string;
   LangLevel?: string | null;
+  CanReadGradeId?: number | string | null;
+  CanWriteGradeId?: number | string | null;
+  CanSpeakGradeId?: number | string | null;
+  CanListenGradeId?: number | string | null;
   [key: string]: unknown;
 }
 
@@ -578,6 +592,289 @@ export const exportCandidates = async (
     blob: response.data,
     filename,
   };
+};
+
+// ============================================================================
+// Edit data candidate
+// ----------------------------------------------------------------------------
+// Dua aturan payload yang wajib dipatuhi (lihat dokumentasi API):
+//  1. Field biasa bersifat PARTIAL — field yang tidak dikirim tidak tersentuh.
+//  2. Section koleksi (identities, educations, experiences, skills, languages,
+//     answers, job_expected) bersifat REPLACE PENUH — kalau key-nya dikirim,
+//     isinya dianggap daftar final dan baris lama yang tidak ikut DIHAPUS.
+//     Karena itu: jangan pernah mengirim array kosong untuk "tidak diubah",
+//     hilangkan key-nya dari payload.
+// ============================================================================
+
+/** Sub-objek alamat (`address.residential` / `address.original`). */
+export interface CandidateAddressPayload {
+  address?: string | null;
+  city_id?: number | null;
+  city_name?: string | null;
+  state_name?: string | null;
+  zip_code?: string | null;
+  phone?: string | null;
+  rt?: string | null;
+  rw?: string | null;
+  desa?: string | null;
+}
+
+export interface CandidateIdentityPayload {
+  /** Kosongkan untuk baris baru. */
+  id?: number;
+  card_type_id: number;
+  number: string;
+  publisher?: string | null;
+  expired_at?: string | null;
+  is_default?: boolean;
+}
+
+export interface CandidateEducationPayload {
+  id?: number;
+  edu_level_id: number;
+  major?: string | null;
+  edu_institution_id?: number | null;
+  institution_name?: string | null;
+  city_name?: string | null;
+  gpa?: number | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  start_date?: string | null;
+  graduate_date?: string | null;
+  front_title?: string | null;
+  end_title?: string | null;
+  /** Maksimal satu item boleh bernilai true. */
+  is_last_education?: boolean;
+}
+
+export interface CandidateExperiencePayload {
+  id?: number;
+  company_name: string;
+  position: string;
+  company_type_name?: string | null;
+  business_type?: string | null;
+  company_address?: string | null;
+  company_zip_code?: string | null;
+  company_phone?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  period_year?: number | null;
+  period_month?: number | null;
+  salary_start?: number | null;
+  salary_end?: number | null;
+  termination_reason?: string | null;
+  total_employee?: number | null;
+  report_to?: string | null;
+  description?: string | null;
+  is_present?: boolean;
+}
+
+export interface CandidateSkillPayload {
+  id?: number;
+  name: string;
+  skill_id?: number | null;
+  criteria_id?: number | null;
+  description?: string | null;
+}
+
+export interface CandidateLanguagePayload {
+  id?: number;
+  language_id: number;
+  read_grade_id?: number | null;
+  write_grade_id?: number | null;
+  speak_grade_id?: number | null;
+  listen_grade_id?: number | null;
+}
+
+export interface CandidateAnswerPayload {
+  id?: number;
+  question_id: number;
+  answer?: string | null;
+  /** CanExpId pengalaman yang sudah ada. */
+  experience_id?: number | null;
+  /** Alternatif: index pada array `experiences` di request yang sama. */
+  experience_index?: number | null;
+  template_id?: number | null;
+  remark?: string | null;
+}
+
+export interface CandidateJobExpectedPayload {
+  id?: number;
+  priority?: string | null;
+  job_title_id?: number | null;
+  position_id?: number | null;
+  vacant_pos_id?: number | null;
+  vacant_id?: number | null;
+  other_job_title_name?: string | null;
+  other_position_name?: string | null;
+}
+
+export interface UpdateCandidatePayload {
+  // --- Demographics (partial) ---
+  full_name?: string;
+  nickname?: string | null;
+  front_title?: string | null;
+  end_title?: string | null;
+  email?: string;
+  mobile_phone?: string;
+  gender?: "M" | "F";
+  date_of_birth?: string;
+  birth_city_id?: number | null;
+  birth_city_name?: string | null;
+  marital_status_id?: number | null;
+  married_date?: string | null;
+  religion_id?: number | null;
+  race_id?: number | null;
+  citizen_id?: number | null;
+  blood_type?: string | null;
+  height?: number | null;
+  weight?: number | null;
+  npwp?: string | null;
+  expected_salary?: number | null;
+  expected_salary_type?: string | null;
+  availability?: string | null;
+  candidate_status?: string | null;
+  is_fresh_graduate?: boolean;
+  is_foreigner?: boolean;
+  bpjs_tk_no?: string | null;
+  bpjs_kes_no?: string | null;
+  bank_name?: string | null;
+  bank_account?: string | null;
+
+  // --- Alamat (objek, bukan array) ---
+  address?: {
+    residential?: CandidateAddressPayload;
+    original?: CandidateAddressPayload;
+  };
+
+  // --- Section koleksi (replace penuh) ---
+  identities?: CandidateIdentityPayload[];
+  educations?: CandidateEducationPayload[];
+  experiences?: CandidateExperiencePayload[];
+  skills?: CandidateSkillPayload[];
+  languages?: CandidateLanguagePayload[];
+  answers?: CandidateAnswerPayload[];
+  job_expected?: CandidateJobExpectedPayload[];
+}
+
+export interface UpdateCandidateResponse {
+  success: boolean;
+  message: string;
+  data: {
+    /** Bentuknya persis sama dengan GET /candidates/{id} — tidak perlu re-fetch. */
+    candidate: Candidate;
+    /** true = perubahan belum terdorong ke SQL Server (ERP). */
+    needs_sqlserver_resync: boolean;
+  };
+}
+
+/** Peta error validasi 422; key mengikuti path payload, mis. `experiences.1.company_name`. */
+export type CandidateValidationErrors = Record<string, string[]>;
+
+/**
+ * Ambil peta error dari response 422. Mengembalikan null untuk error lain,
+ * supaya caller bisa membedakan "form salah" dan "request gagal".
+ */
+export const getCandidateValidationErrors = (
+  error: unknown,
+): CandidateValidationErrors | null => {
+  const response = (
+    error as {
+      response?: { status?: number; data?: { errors?: unknown } };
+    }
+  )?.response;
+  if (response?.status !== 422) return null;
+  const errors = response?.data?.errors;
+  if (!errors || typeof errors !== "object") return null;
+
+  // Normalisasi: backend bisa mengirim string tunggal, bukan array.
+  const entries = Object.entries(errors as Record<string, unknown>);
+  return entries.reduce<CandidateValidationErrors>((acc, [key, value]) => {
+    acc[key] = Array.isArray(value) ? value.map(String) : [String(value)];
+    return acc;
+  }, {});
+};
+
+export const updateCandidate = async (
+  canId: string | number,
+  payload: UpdateCandidatePayload,
+): Promise<UpdateCandidateResponse> => {
+  const response = await api.patch<UpdateCandidateResponse>(
+    `${localApiBaseUrl}/candidates/${canId}`,
+    payload,
+  );
+  return response.data;
+};
+
+export interface UploadCandidatePhotoResponse {
+  success: boolean;
+  message?: string;
+  data: { photo_id: number };
+}
+
+/** Ganti foto profil. Foto lama otomatis diganti (satu foto per candidate). */
+export const uploadCandidatePhoto = async (
+  canId: string | number,
+  photo: File,
+): Promise<UploadCandidatePhotoResponse> => {
+  const formData = new FormData();
+  formData.append("photo", photo);
+
+  const response = await api.post<UploadCandidatePhotoResponse>(
+    `${localApiBaseUrl}/candidates/${canId}/photo`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+  return response.data;
+};
+
+export interface UploadCandidateDocumentsResponse {
+  success: boolean;
+  message?: string;
+  data: { document_id: number; file_name: string }[];
+}
+
+/**
+ * Tambah dokumen (append — dokumen lama tidak dihapus).
+ * `descriptions` opsional; jika dikirim jumlahnya harus sama dengan jumlah file.
+ */
+export const uploadCandidateDocuments = async (
+  canId: string | number,
+  files: File[],
+  descriptions?: string[],
+): Promise<UploadCandidateDocumentsResponse> => {
+  const formData = new FormData();
+  files.forEach((file, index) => {
+    formData.append("documents[]", file);
+    if (descriptions) {
+      formData.append("document_descriptions[]", descriptions[index] ?? "");
+    }
+  });
+
+  const response = await api.post<UploadCandidateDocumentsResponse>(
+    `${localApiBaseUrl}/candidates/${canId}/documents`,
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    },
+  );
+  return response.data;
+};
+
+export const deleteCandidateDocument = async (
+  canId: string | number,
+  canDocId: number,
+): Promise<{ success: boolean; message: string }> => {
+  const response = await api.delete(
+    `${localApiBaseUrl}/candidates/${canId}/documents/${canDocId}`,
+  );
+  return response.data;
 };
 
 export const toggleCandidateChecklist = async (

@@ -36,6 +36,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  buildOperatorPosition,
+  OPERATOR_UNIT_GROUPS,
+  REQUIRED_OPERATOR_DOCUMENTS,
+} from "@/lib/constants/operatorUnits";
 
 export interface Province {
   code: string;
@@ -95,6 +100,18 @@ export const ApplyJobModal = ({
     status_apply: "local",
   });
 
+  // Lowongan level Operator: pelamar wajib memilih unit yang dikuasai.
+  const isOperatorPosition = React.useMemo(() => {
+    const level = vacancy.PosAdtGroups?.find(
+      (g) => g.PosAdtName?.toLowerCase() === "level",
+    )?.PosAdtGrpName;
+    if (level) return level.toLowerCase().includes("operator");
+    // Fallback bila relasi PosAdtGroups tidak ikut ter-load.
+    return Boolean(
+      vacancy.VacantPositionName?.toLowerCase().includes("operator"),
+    );
+  }, [vacancy]);
+
   const [questionGroups, setQuestionGroups] = useState<QuestionGroup[]>([]);
   const [questionAnswers, setQuestionAnswers] = useState<
     Record<number, string>
@@ -133,9 +150,25 @@ export const ApplyJobModal = ({
   const [experiences, setExperiences] = useState([
     { company_name: "", position: "", job_period_year: "", salary: "" },
   ]);
+  const [openPositionIndex, setOpenPositionIndex] = useState<number | null>(
+    null,
+  );
+  // `required` menandai baris dokumen wajib: deskripsinya terkunci dan
+  // barisnya tidak bisa dihapus (mis. SIMPER & Mine Permit untuk Operator).
   const [documents, setDocuments] = useState<
-    { file: File | null; description: string }[]
-  >([{ file: null, description: "" }]);
+    { file: File | null; description: string; required?: boolean }[]
+  >(() =>
+    isOperatorPosition
+      ? [
+          ...REQUIRED_OPERATOR_DOCUMENTS.map((description) => ({
+            file: null as File | null,
+            description,
+            required: true,
+          })),
+          { file: null, description: "" },
+        ]
+      : [{ file: null, description: "" }],
+  );
 
   const [regencies, setRegencies] = useState<
     { CityId: number; CityCode: string; CityName: string }[]
@@ -792,8 +825,10 @@ export const ApplyJobModal = ({
 
   const addDocument = () =>
     setDocuments([...documents, { file: null, description: "" }]);
-  const removeDocument = (index: number) =>
+  const removeDocument = (index: number) => {
+    if (documents[index]?.required) return;
     setDocuments(documents.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -815,6 +850,16 @@ export const ApplyJobModal = ({
 
     if (documents.filter((d) => d.file).length === 0) {
       toast.error("Harap unggah setidaknya satu dokumen (CV).");
+      return;
+    }
+
+    const missingRequiredDocs = documents
+      .filter((d) => d.required && !d.file)
+      .map((d) => d.description);
+    if (missingRequiredDocs.length > 0) {
+      toast.error(
+        `Dokumen wajib belum diunggah: ${missingRequiredDocs.join(", ")}.`,
+      );
       return;
     }
 
@@ -2067,15 +2112,89 @@ export const ApplyJobModal = ({
                     </div>
                     <div className="space-y-2">
                       <Label>Posisi/Jabatan*</Label>
-                      <Input
-                        value={exp.position}
-                        onChange={(e) => {
-                          const newArr = [...experiences];
-                          newArr[index].position = e.target.value;
-                          setExperiences(newArr);
-                        }}
-                        placeholder="Staff"
-                      />
+                      {isOperatorPosition ? (
+                        // Lowongan Operator: posisi dipilih dari daftar unit,
+                        // tersimpan sebagai "Operator - <unit>".
+                        <Popover
+                          open={openPositionIndex === index}
+                          onOpenChange={(open) =>
+                            setOpenPositionIndex(open ? index : null)
+                          }
+                        >
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={openPositionIndex === index}
+                              className="w-full justify-between font-normal px-3 bg-transparent"
+                            >
+                              {exp.position || (
+                                <span className="text-muted-foreground cursor-pointer">
+                                  Pilih Unit
+                                </span>
+                              )}
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent
+                            className="w-[--radix-popover-trigger-width] p-0 z-[160]"
+                            align="start"
+                          >
+                            <Command>
+                              <CommandInput placeholder="Cari unit..." />
+                              <CommandList>
+                                <CommandEmpty>
+                                  Unit tidak ditemukan.
+                                </CommandEmpty>
+                                {OPERATOR_UNIT_GROUPS.map((group) => (
+                                  <CommandGroup
+                                    key={group.category}
+                                    heading={group.category}
+                                  >
+                                    {group.units.map((unit) => {
+                                      const positionValue =
+                                        buildOperatorPosition(unit);
+                                      return (
+                                        <CommandItem
+                                          key={unit}
+                                          value={`${group.category} ${unit}`}
+                                          onSelect={() => {
+                                            const newArr = [...experiences];
+                                            newArr[index].position =
+                                              positionValue;
+                                            setExperiences(newArr);
+                                            setOpenPositionIndex(null);
+                                          }}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              exp.position === positionValue
+                                                ? "opacity-100"
+                                                : "opacity-0",
+                                            )}
+                                          />
+                                          {unit}
+                                        </CommandItem>
+                                      );
+                                    })}
+                                  </CommandGroup>
+                                ))}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      ) : (
+                        <Input
+                          value={exp.position}
+                          onChange={(e) => {
+                            const newArr = [...experiences];
+                            newArr[index].position = e.target.value;
+                            setExperiences(newArr);
+                          }}
+                          placeholder="Staff"
+                        />
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>Tahun Periode</Label>
@@ -2144,10 +2263,24 @@ export const ApplyJobModal = ({
                     <Plus className="w-4 h-4 mr-1" /> Tambah Dokumen
                   </Button>
                 </div>
+                {isOperatorPosition && (
+                  <p className="text-sm text-slate-600 bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+                    Untuk posisi Operator,{" "}
+                    <span className="font-semibold">
+                      {REQUIRED_OPERATOR_DOCUMENTS.join(" dan ")}
+                    </span>{" "}
+                    wajib diunggah.
+                  </p>
+                )}
                 {documents.map((doc, index) => (
                   <div
                     key={index}
-                    className="flex flex-col md:flex-row gap-4 items-start bg-slate-50 p-4 rounded-xl border border-slate-100 relative pr-12"
+                    className={cn(
+                      "flex flex-col md:flex-row gap-4 items-start p-4 rounded-xl border relative pr-12",
+                      doc.required
+                        ? "bg-primary/5 border-primary/20"
+                        : "bg-slate-50 border-slate-100",
+                    )}
                   >
                     <div className="flex-1 space-y-2 w-full">
                       <Label>Berkas (PDF/Word)*</Label>
@@ -2173,7 +2306,13 @@ export const ApplyJobModal = ({
                       <Label>Deskripsi Dokumen*</Label>
                       <Input
                         value={doc.description}
+                        readOnly={doc.required}
+                        className={cn(
+                          doc.required &&
+                            "bg-slate-100 font-medium text-slate-700 cursor-default",
+                        )}
                         onChange={(e) => {
+                          if (doc.required) return;
                           const newArr = [...documents];
                           newArr[index].description = e.target.value;
                           setDocuments(newArr);
@@ -2181,15 +2320,17 @@ export const ApplyJobModal = ({
                         placeholder="Contoh: CV Lengkap, Ijazah, Transkrip"
                       />
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50 absolute top-4 right-2"
-                      onClick={() => removeDocument(index)}
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </Button>
+                    {!doc.required && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 absolute top-4 right-2"
+                        onClick={() => removeDocument(index)}
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>

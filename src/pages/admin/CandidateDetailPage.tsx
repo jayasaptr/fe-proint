@@ -1,4 +1,15 @@
+import CandidateEditModal from "@/components/CandidateEditModal";
 import DocumentPreview from "@/components/DocumentPreview";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,17 +19,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  deleteCandidateDocument,
   downloadCandidateDocument,
   getCandidateById,
+  postApplyToSqlServer,
   previewCandidateDocument,
+  uploadCandidateDocuments,
+  uploadCandidatePhoto,
+  type CandidateDetailResponse,
+  type UpdateCandidateResponse,
 } from "@/lib/api/candidates";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   Award,
   BriefcaseBusiness,
   Building2,
+  Camera,
   ChevronRight,
   CreditCard,
   Download,
@@ -32,12 +51,16 @@ import {
   Mail,
   MapPin,
   MoreHorizontal,
+  Pencil,
   Phone,
   Printer,
+  RefreshCw,
   Share2,
+  Trash2,
+  Upload,
   User,
 } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -175,9 +198,24 @@ const CandidateDetailPage: React.FC = () => {
     fileName: null,
   });
   const [selectedJob, setSelectedJob] = useState<any>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [needsSqlServerResync, setNeedsSqlServerResync] = useState(false);
+  const [isResyncing, setIsResyncing] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [isDeletingDocument, setIsDeletingDocument] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+
+  const queryClient = useQueryClient();
+  const detailQueryKey = useMemo(() => ["candidate-detail", id], [id]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["candidate-detail", id],
+    queryKey: detailQueryKey,
     queryFn: () => getCandidateById(id as string),
     enabled: Boolean(id),
     staleTime: 2 * 60 * 1000,
@@ -337,6 +375,121 @@ const CandidateDetailPage: React.FC = () => {
     }
   };
 
+  /**
+   * Response PATCH sudah membawa candidate lengkap, jadi cache langsung ditimpa
+   * tanpa re-fetch (sesuai catatan pada dokumentasi API).
+   */
+  const handleCandidateSaved = (result: UpdateCandidateResponse["data"]) => {
+    queryClient.setQueryData<CandidateDetailResponse>(
+      detailQueryKey,
+      (previous) => ({
+        success: true,
+        message: previous?.message ?? "Candidate detail",
+        data: result.candidate,
+      }),
+    );
+    // Daftar candidate ikut basi setelah edit.
+    queryClient.invalidateQueries({ queryKey: ["candidates"] });
+    setNeedsSqlServerResync(Boolean(result.needs_sqlserver_resync));
+  };
+
+  const handleResyncSqlServer = async () => {
+    if (!candidate) return;
+    try {
+      setIsResyncing(true);
+      const response = await postApplyToSqlServer(candidate.CanId);
+      if (response.success) {
+        toast.success(
+          response.message || "Data berhasil disinkronkan ke SQL Server.",
+        );
+        setNeedsSqlServerResync(false);
+      } else {
+        toast.error(response.message || "Sinkronisasi ke SQL Server gagal.");
+      }
+    } catch (resyncError) {
+      const err = resyncError as any;
+      toast.error(
+        err?.response?.data?.message || "Sinkronisasi ke SQL Server gagal.",
+      );
+    } finally {
+      setIsResyncing(false);
+    }
+  };
+
+  const handlePhotoSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !candidate) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Ukuran foto maksimal 2 MB.");
+      return;
+    }
+
+    try {
+      setIsUploadingPhoto(true);
+      await uploadCandidatePhoto(candidate.CanId, file);
+      toast.success("Foto profil berhasil diperbarui.");
+      // Foto tidak ikut di response PATCH — ambil ulang detail.
+      await queryClient.invalidateQueries({ queryKey: detailQueryKey });
+    } catch (uploadError) {
+      const err = uploadError as any;
+      toast.error(err?.response?.data?.message || "Gagal mengunggah foto.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const handleDocumentsSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0 || !candidate) return;
+
+    const oversized = files.find((file) => file.size > 10 * 1024 * 1024);
+    if (oversized) {
+      toast.error(`Ukuran dokumen maksimal 10 MB (${oversized.name}).`);
+      return;
+    }
+
+    try {
+      setIsUploadingDocuments(true);
+      // Deskripsi default memakai nama file; endpoint ini bersifat append.
+      await uploadCandidateDocuments(
+        candidate.CanId,
+        files,
+        files.map((file) => file.name),
+      );
+      toast.success(`${files.length} dokumen berhasil diunggah.`);
+      await queryClient.invalidateQueries({ queryKey: detailQueryKey });
+    } catch (uploadError) {
+      const err = uploadError as any;
+      toast.error(err?.response?.data?.message || "Gagal mengunggah dokumen.");
+    } finally {
+      setIsUploadingDocuments(false);
+    }
+  };
+
+  const handleConfirmDeleteDocument = async () => {
+    if (!candidate || !documentToDelete) return;
+
+    try {
+      setIsDeletingDocument(true);
+      await deleteCandidateDocument(candidate.CanId, documentToDelete.id);
+      toast.success(`Dokumen ${documentToDelete.name} dihapus.`);
+      setDocumentToDelete(null);
+      await queryClient.invalidateQueries({ queryKey: detailQueryKey });
+    } catch (deleteError) {
+      const err = deleteError as any;
+      toast.error(err?.response?.data?.message || "Gagal menghapus dokumen.");
+    } finally {
+      setIsDeletingDocument(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-[80vh] flex-col gap-4">
@@ -396,29 +549,86 @@ const CandidateDetailPage: React.FC = () => {
               >
                 <Printer className="w-4 h-4 mr-2" /> Print
               </Button>
+              <Button size="sm" onClick={() => setIsEditOpen(true)}>
+                <Pencil className="w-4 h-4 mr-2" /> Edit Data
+              </Button>
             </div>
           </div>
 
+          {/* Sinkronisasi ulang ke ERP: backend sengaja tidak melakukannya
+              otomatis karena menulis ke SQL Server produksi. */}
+          {needsSqlServerResync && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 p-4 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/20">
+              <div className="flex gap-3 items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                    Perubahan belum terdorong ke SQL Server
+                  </p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+                    Candidate ini sudah pernah di-apply ke ERP. Hasil edit baru
+                    tersimpan di database lokal.
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleResyncSqlServer}
+                disabled={isResyncing}
+                className="shrink-0"
+              >
+                {isResyncing ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                )}
+                Sinkronkan ulang
+              </Button>
+            </div>
+          )}
+
           {/* Header Info Banner */}
           <div className="flex flex-col md:flex-row md:items-center gap-6">
-            <div
-              className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer overflow-hidden shrink-0"
-              onClick={() =>
-                !!photoSource && !isPhotoError && setIsPhotoPreviewOpen(true)
-              }
-            >
-              {photoSource && !isPhotoError ? (
-                <img
-                  src={photoSource}
-                  alt={candidate.CanName}
-                  className="w-full h-full object-cover"
-                  onError={() => setIsPhotoError(true)}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <User className="w-8 h-8 text-slate-400" />
-                </div>
-              )}
+            <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24">
+              <div
+                className="w-full h-full rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer overflow-hidden"
+                onClick={() =>
+                  !!photoSource && !isPhotoError && setIsPhotoPreviewOpen(true)
+                }
+              >
+                {photoSource && !isPhotoError ? (
+                  <img
+                    src={photoSource}
+                    alt={candidate.CanName}
+                    className="w-full h-full object-cover"
+                    onError={() => setIsPhotoError(true)}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <User className="w-8 h-8 text-slate-400" />
+                  </div>
+                )}
+              </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                className="hidden"
+                onChange={handlePhotoSelected}
+              />
+              <button
+                type="button"
+                title="Ganti foto profil (jpg/png, maks 2 MB)"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={isUploadingPhoto}
+                className="absolute -bottom-1 -right-1 p-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-60"
+              >
+                {isUploadingPhoto ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Camera className="w-3.5 h-3.5" />
+                )}
+              </button>
             </div>
 
             <div className="flex-1">
@@ -907,7 +1117,35 @@ const CandidateDetailPage: React.FC = () => {
             </SectionBlock>
 
             {/* Attachments */}
-            <SectionBlock icon={FileCheck} title="Documents & Attachments">
+            <SectionBlock
+              icon={FileCheck}
+              title="Documents & Attachments"
+              action={
+                <>
+                  <input
+                    ref={documentInputRef}
+                    type="file"
+                    multiple
+                    accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={handleDocumentsSelected}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => documentInputRef.current?.click()}
+                    disabled={isUploadingDocuments}
+                  >
+                    {isUploadingDocuments ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    Tambah Dokumen
+                  </Button>
+                </>
+              }
+            >
               {documents.length === 0 ? (
                 <div className="py-8 text-center bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
                   <p className="text-slate-500 font-medium">
@@ -969,26 +1207,44 @@ const CandidateDetailPage: React.FC = () => {
                             )}
                             Preview
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full"
-                            onClick={() =>
-                              handleDownloadDocument(
-                                doc.CanDocId,
-                                fileName,
-                                doc.can_doc_data_url,
-                              )
-                            }
-                            disabled={!canDownload || isDownloading}
-                          >
-                            {isDownloading ? (
-                              <MoreHorizontal className="w-4 h-4 animate-pulse" />
-                            ) : (
-                              <Download className="w-4 h-4 mr-2" />
-                            )}
-                            Download
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() =>
+                                handleDownloadDocument(
+                                  doc.CanDocId,
+                                  fileName,
+                                  doc.can_doc_data_url,
+                                )
+                              }
+                              disabled={!canDownload || isDownloading}
+                            >
+                              {isDownloading ? (
+                                <MoreHorizontal className="w-4 h-4 animate-pulse" />
+                              ) : (
+                                <Download className="w-4 h-4 mr-2" />
+                              )}
+                              Download
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Hapus dokumen"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                              onClick={() =>
+                                doc.CanDocId &&
+                                setDocumentToDelete({
+                                  id: doc.CanDocId,
+                                  name: doc.CanDocDesc || fileName,
+                                })
+                              }
+                              disabled={!doc.CanDocId}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -999,6 +1255,55 @@ const CandidateDetailPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Edit Candidate Modal — di-mount hanya saat dibuka supaya form selalu
+          ter-prefill dari data candidate terbaru. */}
+      {isEditOpen && (
+        <CandidateEditModal
+          candidate={candidate}
+          open
+          onOpenChange={setIsEditOpen}
+          onSaved={handleCandidateSaved}
+        />
+      )}
+
+      {/* Konfirmasi hapus dokumen */}
+      <AlertDialog
+        open={!!documentToDelete}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingDocument) setDocumentToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus dokumen ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {documentToDelete?.name} akan dihapus permanen dari data
+              candidate. Tindakan ini tidak bisa dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingDocument}>
+              Batal
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                handleConfirmDeleteDocument();
+              }}
+              disabled={isDeletingDocument}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeletingDocument ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 mr-2" />
+              )}
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Photo Preview Modal */}
       <Dialog open={isPhotoPreviewOpen} onOpenChange={setIsPhotoPreviewOpen}>
