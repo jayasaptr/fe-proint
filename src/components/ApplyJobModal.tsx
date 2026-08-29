@@ -838,6 +838,30 @@ export const ApplyJobModal = ({
       return;
     }
 
+    // Baris pengalaman hanya ikut terkirim bila company_name dan position
+    // terisi (lihat filter saat build payload). Tanpa cek ini, baris yang
+    // setengah terisi hilang diam-diam tanpa pelamar sadar.
+    const incompleteExperience = experiences.findIndex((exp) => {
+      const isRowTouched = Boolean(
+        exp.company_name || exp.position || exp.job_period_year || exp.salary,
+      );
+      return isRowTouched && !(exp.company_name && exp.position);
+    });
+    if (incompleteExperience !== -1) {
+      const exp = experiences[incompleteExperience];
+      const rowLabel = `Pengalaman Kerja #${incompleteExperience + 1}`;
+      if (!exp.position) {
+        toast.error(
+          isOperatorPosition
+            ? `${rowLabel}: Unit wajib dipilih.`
+            : `${rowLabel}: Posisi/Jabatan wajib diisi.`,
+        );
+      } else {
+        toast.error(`${rowLabel}: Nama Perusahaan wajib diisi.`);
+      }
+      return;
+    }
+
     if (!formData.is_declared_true) {
       toast.error("Anda harus menyetujui pernyataan kebenaran data.");
       return;
