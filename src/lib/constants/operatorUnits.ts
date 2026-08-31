@@ -65,3 +65,61 @@ export const OPERATOR_POSITION_VALUES = new Set(
     group.units.map((unit) => buildOperatorPosition(unit)),
   ),
 );
+
+/** Dokumen yang wajib diunggah pelamar pada lowongan level Mechanic/Mekanik. */
+export const REQUIRED_MECHANIC_DOCUMENTS = ["BMC"];
+
+/**
+ * Kepanjangan dokumen yang namanya berupa singkatan. Hanya untuk ditampilkan ke
+ * pelamar; nilai yang dikirim ke API tetap singkatannya agar data rekruter
+ * konsisten dengan lamaran yang sudah masuk.
+ */
+export const DOCUMENT_FULL_NAMES: Record<string, string> = {
+  BMC: "Basic Mechanic Course",
+};
+
+/**
+ * Dokumen wajib berdasarkan level lowongan. Operator dan Mechanic punya
+ * daftar berkas wajib yang berbeda; level lain tidak mewajibkan apa pun.
+ */
+export const getRequiredDocuments = (opts: {
+  isOperator: boolean;
+  isMechanic: boolean;
+}): string[] => {
+  if (opts.isOperator) return REQUIRED_OPERATOR_DOCUMENTS;
+  if (opts.isMechanic) return REQUIRED_MECHANIC_DOCUMENTS;
+  return [];
+};
+
+/** Ekstensi berkas yang diterima pada unggahan dokumen lamaran. */
+export const ALLOWED_DOCUMENT_EXTENSIONS = ["pdf", "doc", "docx"];
+
+/**
+ * MIME type yang sah untuk PDF/Word. Sebagian browser mengirim string kosong
+ * atau "application/octet-stream" untuk .doc/.docx, jadi MIME saja tidak cukup
+ * dan pengecekan tetap digabung dengan ekstensi.
+ */
+const ALLOWED_DOCUMENT_MIME_TYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
+
+/** Label ekstensi untuk pesan error, mis. ".pdf, .doc, .docx". */
+export const ALLOWED_DOCUMENT_LABEL = ALLOWED_DOCUMENT_EXTENSIONS.map(
+  (ext) => `.${ext}`,
+).join(", ");
+
+/**
+ * Memastikan berkas benar-benar PDF/Word. Atribut `accept` pada input hanya
+ * menyaring dialog pemilih berkas — pelamar masih bisa menembusnya lewat
+ * drag-and-drop atau opsi "All Files", jadi validasinya diulang di sini.
+ */
+export const isAllowedDocumentFile = (file: File): boolean => {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_DOCUMENT_EXTENSIONS.includes(extension)) return false;
+  // MIME hanya divalidasi bila browser mengisinya dengan nilai yang bermakna.
+  const mimeType = file.type.toLowerCase();
+  if (!mimeType || mimeType === "application/octet-stream") return true;
+  return ALLOWED_DOCUMENT_MIME_TYPES.includes(mimeType);
+};

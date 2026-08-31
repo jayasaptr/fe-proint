@@ -37,9 +37,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ALLOWED_DOCUMENT_LABEL,
   buildOperatorPosition,
+  DOCUMENT_FULL_NAMES,
+  getRequiredDocuments,
+  isAllowedDocumentFile,
   OPERATOR_UNIT_GROUPS,
-  REQUIRED_OPERATOR_DOCUMENTS,
 } from "@/lib/constants/operatorUnits";
 
 export interface Province {
@@ -100,17 +103,40 @@ export const ApplyJobModal = ({
     status_apply: "local",
   });
 
+  // Mencocokkan level lowongan dengan salah satu kata kunci. Level diambil dari
+  // PosAdtGroups; bila relasi itu tidak ikut ter-load, jatuh ke nama posisi.
+  const matchesLevel = React.useCallback(
+    (keywords: string[]) => {
+      const level = vacancy.PosAdtGroups?.find(
+        (g) => g.PosAdtName?.toLowerCase() === "level",
+      )?.PosAdtGrpName;
+      const source = (level || vacancy.VacantPositionName || "").toLowerCase();
+      return keywords.some((keyword) => source.includes(keyword));
+    },
+    [vacancy],
+  );
+
   // Lowongan level Operator: pelamar wajib memilih unit yang dikuasai.
-  const isOperatorPosition = React.useMemo(() => {
-    const level = vacancy.PosAdtGroups?.find(
-      (g) => g.PosAdtName?.toLowerCase() === "level",
-    )?.PosAdtGrpName;
-    if (level) return level.toLowerCase().includes("operator");
-    // Fallback bila relasi PosAdtGroups tidak ikut ter-load.
-    return Boolean(
-      vacancy.VacantPositionName?.toLowerCase().includes("operator"),
-    );
-  }, [vacancy]);
+  const isOperatorPosition = React.useMemo(
+    () => matchesLevel(["operator"]),
+    [matchesLevel],
+  );
+
+  // Lowongan level Mechanic/Mekanik: pelamar wajib melampirkan dokumen BMC.
+  const isMechanicPosition = React.useMemo(
+    () => matchesLevel(["mechanic", "mekanik"]),
+    [matchesLevel],
+  );
+
+  // Dokumen wajib mengikuti level lowongan (Operator / Mechanic / lainnya).
+  const requiredDocuments = React.useMemo(
+    () =>
+      getRequiredDocuments({
+        isOperator: isOperatorPosition,
+        isMechanic: isMechanicPosition,
+      }),
+    [isOperatorPosition, isMechanicPosition],
+  );
 
   const [questionGroups, setQuestionGroups] = useState<QuestionGroup[]>([]);
   const [questionAnswers, setQuestionAnswers] = useState<
@@ -154,21 +180,18 @@ export const ApplyJobModal = ({
     null,
   );
   // `required` menandai baris dokumen wajib: deskripsinya terkunci dan
-  // barisnya tidak bisa dihapus (mis. SIMPER & Mine Permit untuk Operator).
+  // barisnya tidak bisa dihapus (mis. SIMPER & Mine Permit untuk Operator,
+  // BMC untuk Mechanic).
   const [documents, setDocuments] = useState<
     { file: File | null; description: string; required?: boolean }[]
-  >(() =>
-    isOperatorPosition
-      ? [
-          ...REQUIRED_OPERATOR_DOCUMENTS.map((description) => ({
-            file: null as File | null,
-            description,
-            required: true,
-          })),
-          { file: null, description: "" },
-        ]
-      : [{ file: null, description: "" }],
-  );
+  >(() => [
+    ...requiredDocuments.map((description) => ({
+      file: null as File | null,
+      description,
+      required: true,
+    })),
+    { file: null, description: "" },
+  ]);
 
   const [regencies, setRegencies] = useState<
     { CityId: number; CityCode: string; CityName: string }[]
@@ -874,6 +897,18 @@ export const ApplyJobModal = ({
 
     if (documents.filter((d) => d.file).length === 0) {
       toast.error("Harap unggah setidaknya satu dokumen (CV).");
+      return;
+    }
+
+    // Jaring pengaman: berkas seharusnya sudah tersaring saat dipilih, tapi
+    // state bisa terisi lewat jalur lain (mis. draft lama) sebelum dikirim.
+    const invalidDocument = documents.find(
+      (d) => d.file && !isAllowedDocumentFile(d.file),
+    );
+    if (invalidDocument?.file) {
+      toast.error(
+        `"${invalidDocument.file.name}" bukan dokumen PDF/Word (${ALLOWED_DOCUMENT_LABEL}).`,
+      );
       return;
     }
 
@@ -2287,11 +2322,17 @@ export const ApplyJobModal = ({
                     <Plus className="w-4 h-4 mr-1" /> Tambah Dokumen
                   </Button>
                 </div>
-                {isOperatorPosition && (
+                {requiredDocuments.length > 0 && (
                   <p className="text-sm text-slate-600 bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
-                    Untuk posisi Operator,{" "}
+                    Untuk posisi {isOperatorPosition ? "Operator" : "Mechanic"},{" "}
                     <span className="font-semibold">
-                      {REQUIRED_OPERATOR_DOCUMENTS.join(" dan ")}
+                      {requiredDocuments
+                        .map((name) =>
+                          DOCUMENT_FULL_NAMES[name]
+                            ? `${name} (${DOCUMENT_FULL_NAMES[name]})`
+                            : name,
+                        )
+                        .join(" dan ")}
                     </span>{" "}
                     wajib diunggah.
                   </p>
@@ -2315,6 +2356,13 @@ export const ApplyJobModal = ({
                           const newArr = [...documents];
                           if (e.target.files && e.target.files.length > 0) {
                             const file = e.target.files[0];
+                            if (!isAllowedDocumentFile(file)) {
+                              toast.error(
+                                `Format berkas tidak didukung. Unggah dokumen PDF atau Word (${ALLOWED_DOCUMENT_LABEL}).`,
+                              );
+                              e.target.value = "";
+                              return;
+                            }
                             if (file.size > 10 * 1024 * 1024) {
                               toast.error("Ukuran file maksimal 10MB.");
                               e.target.value = "";
@@ -2343,6 +2391,11 @@ export const ApplyJobModal = ({
                         }}
                         placeholder="Contoh: CV Lengkap, Ijazah, Transkrip"
                       />
+                      {doc.required && DOCUMENT_FULL_NAMES[doc.description] && (
+                        <p className="text-xs text-slate-500">
+                          {DOCUMENT_FULL_NAMES[doc.description]}
+                        </p>
+                      )}
                     </div>
                     {!doc.required && (
                       <Button
