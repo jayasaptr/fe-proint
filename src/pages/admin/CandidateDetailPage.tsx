@@ -29,6 +29,11 @@ import {
   type CandidateDetailResponse,
   type UpdateCandidateResponse,
 } from "@/lib/api/candidates";
+import {
+  pickDefaultPhoto,
+  useCandidatePhotoSrc,
+} from "@/hooks/useCandidatePhotoSrc";
+import { resolveUploadErrorMessage } from "@/lib/uploadError";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -248,18 +253,16 @@ const CandidateDetailPage: React.FC = () => {
   const skills = candidate?.skills || [];
   const languages = candidate?.languages || [];
 
-  const photoSource = useMemo(() => {
-    if (!candidate?.photos || candidate.photos.length === 0) return null;
-    const defaultPhoto =
-      candidate.photos.find(
-        (photo: any) => photo.FgDefault?.toUpperCase() === "Y",
-      ) || candidate.photos[0];
-    const rawPhoto = defaultPhoto?.can_photo_base64?.replace(/\s+/g, "");
-    if (!rawPhoto) return null;
-    return rawPhoto.startsWith("data:image")
-      ? rawPhoto
-      : `data:image/jpeg;base64,${rawPhoto}`;
-  }, [candidate?.photos]);
+  // Foto default: pakai photo_url dari asset service; data lama (photo_url null,
+  // has_photo true) ditarik lewat endpoint preview ber-auth di dalam hook.
+  const defaultPhoto = useMemo(
+    () => pickDefaultPhoto(candidate?.photos),
+    [candidate?.photos],
+  );
+  const { src: photoSource } = useCandidatePhotoSrc(
+    candidate?.CanId,
+    defaultPhoto,
+  );
 
   const expectedSalaryFromQuestions = useMemo(() => {
     // Get first experience with questions
@@ -341,22 +344,17 @@ const CandidateDetailPage: React.FC = () => {
     }
   };
 
+  /**
+   * Unduh selalu lewat endpoint ber-auth: endpoint ini melayani asset baru
+   * maupun blob lama, jadi tidak perlu cabang khusus per sumber file.
+   */
   const handleDownloadDocument = async (
     docId?: number,
     fileName?: string | null,
-    dataUrl?: string | null,
   ) => {
     if (!candidate || !docId)
       return toast.error("Dokumen tidak valid untuk diunduh.");
     const safeFileName = fileName || `document-${docId}`;
-
-    if (dataUrl) {
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = safeFileName;
-      link.click();
-      return;
-    }
 
     try {
       setDownloadingDocumentId(docId);
@@ -435,8 +433,12 @@ const CandidateDetailPage: React.FC = () => {
       // Foto tidak ikut di response PATCH — ambil ulang detail.
       await queryClient.invalidateQueries({ queryKey: detailQueryKey });
     } catch (uploadError) {
-      const err = uploadError as any;
-      toast.error(err?.response?.data?.message || "Gagal mengunggah foto.");
+      toast.error(
+        resolveUploadErrorMessage(
+          uploadError,
+          "Gagal mengunggah foto. Silakan coba lagi.",
+        ),
+      );
     } finally {
       setIsUploadingPhoto(false);
     }
@@ -466,8 +468,12 @@ const CandidateDetailPage: React.FC = () => {
       toast.success(`${files.length} dokumen berhasil diunggah.`);
       await queryClient.invalidateQueries({ queryKey: detailQueryKey });
     } catch (uploadError) {
-      const err = uploadError as any;
-      toast.error(err?.response?.data?.message || "Gagal mengunggah dokumen.");
+      toast.error(
+        resolveUploadErrorMessage(
+          uploadError,
+          "Gagal mengunggah dokumen. Silakan coba lagi.",
+        ),
+      );
     } finally {
       setIsUploadingDocuments(false);
     }
@@ -1156,9 +1162,7 @@ const CandidateDetailPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {documents.map((doc: any, i: number) => {
                     const fileName = doc.CanDocFile || `Document ${i + 1}`;
-                    const canDownload = Boolean(
-                      doc.has_document || doc.can_doc_data_url || doc.CanDocId,
-                    );
+                    const canDownload = Boolean(doc.has_document || doc.CanDocId);
                     const isDownloading =
                       downloadingDocumentId === doc.CanDocId;
                     const isPreviewing = previewingDocumentId === doc.CanDocId;
@@ -1213,11 +1217,7 @@ const CandidateDetailPage: React.FC = () => {
                               size="sm"
                               className="flex-1"
                               onClick={() =>
-                                handleDownloadDocument(
-                                  doc.CanDocId,
-                                  fileName,
-                                  doc.can_doc_data_url,
-                                )
+                                handleDownloadDocument(doc.CanDocId, fileName)
                               }
                               disabled={!canDownload || isDownloading}
                             >

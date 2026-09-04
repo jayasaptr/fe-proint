@@ -161,7 +161,16 @@ export interface CandidateDocument {
   UpdFlag?: string | null;
   has_document?: boolean;
   can_doc_mime_type?: string | null;
-  can_doc_data_url?: string | null;
+  /**
+   * URL publik asset. Bernilai null untuk data lama yang filenya masih blob di
+   * DB — pakai `has_document` sebagai penentu tampil, bukan keberadaan URL ini.
+   */
+  document_url?: string | null;
+  AssetKey?: string | null;
+  AssetUrl?: string | null;
+  AssetFileName?: string | null;
+  AssetContentType?: string | null;
+  AssetFileSize?: number | null;
 }
 
 export interface CandidateJobExpectedOrganizationRecruitment {
@@ -284,7 +293,17 @@ export interface CandidatePhoto {
   UpdDate?: string;
   UpdUser?: string;
   Updflag?: string;
-  can_photo_base64?: string | null;
+  /**
+   * URL publik asset. Bernilai null untuk data lama yang filenya masih blob di
+   * DB — pakai `has_photo` sebagai penentu tampil, bukan keberadaan URL ini.
+   */
+  photo_url?: string | null;
+  has_photo?: boolean;
+  AssetKey?: string | null;
+  AssetUrl?: string | null;
+  AssetFileName?: string | null;
+  AssetContentType?: string | null;
+  AssetFileSize?: number | null;
 }
 
 export interface Candidate {
@@ -541,6 +560,24 @@ export const previewCandidateDocument = async (
   const filename = match?.[1] ? decodeURIComponent(match[1]) : null;
 
   return { blob, mimeType, filename };
+};
+
+/**
+ * Streaming foto lewat endpoint ber-auth. Dipakai hanya untuk data lama yang
+ * `photo_url`-nya null (file masih blob di DB); data baru cukup pakai URL asset.
+ */
+export const previewCandidatePhoto = async (
+  canId: string | number,
+  canPhotoId: number | string,
+): Promise<Blob> => {
+  const response = await api.get(
+    `${localApiBaseUrl}/candidates/${canId}/photos/${canPhotoId}/preview`,
+    {
+      responseType: "blob",
+    },
+  );
+
+  return response.data;
 };
 
 export const downloadCandidateAttachments = async (

@@ -1,3 +1,4 @@
+import { resolveApplyErrorMessage } from "@/lib/uploadError";
 import { cn } from "@/lib/utils";
 import Lottie from "lottie-react";
 import { Check, ChevronsUpDown, Loader2, Plus, Trash2, X } from "lucide-react";
@@ -1082,9 +1083,13 @@ export const ApplyJobModal = ({
           (messages as string[]).forEach((msg) => toast.error(msg));
         });
       } else {
+        // 502 = Asset Service tidak tersedia; message dari backend sudah ramah
+        // user, jadi ditampilkan apa adanya.
         toast.error(
-          responseData?.message ||
+          resolveApplyErrorMessage(
+            error,
             "Terjadi kesalahan sistem saat menghubungi server.",
+          ),
         );
       }
       turnstileInstance?.reset();

@@ -1,3 +1,4 @@
+import CandidateAvatar from "@/components/CandidateAvatar";
 import { TablePagination } from "@/components/TablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,7 +66,6 @@ import {
   Phone,
   Search,
   Trophy,
-  User,
   Users,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
@@ -1082,23 +1082,11 @@ const CandidatesPage: React.FC = () => {
                             navigate(`/admin/candidates/${candidate.CanId}`)
                           }
                         >
-                          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
-                            {candidate.photos?.[0]?.can_photo_base64 ? (
-                              <img
-                                src={
-                                  candidate.photos[0].can_photo_base64.startsWith(
-                                    "data:image",
-                                  )
-                                    ? candidate.photos[0].can_photo_base64
-                                    : `data:image/jpeg;base64,${candidate.photos[0].can_photo_base64}`
-                                }
-                                alt={candidate.CanName}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <User className="w-5 h-5 text-slate-400" />
-                            )}
-                          </div>
+                          <CandidateAvatar
+                            canId={candidate.CanId}
+                            photos={candidate.photos}
+                            name={candidate.CanName}
+                          />
                           <div className="flex flex-col">
                             <span className="font-medium text-slate-900 dark:text-slate-100 text-[14px] group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
                               {candidate.CanName || "-"}
