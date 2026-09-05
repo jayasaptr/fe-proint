@@ -1,3 +1,4 @@
+import AiScoreChip from "@/components/AiScoreChip";
 import { TablePagination } from "@/components/TablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ import {
   toggleCandidatePassed,
   type Candidate,
 } from "@/lib/api/candidates";
+import { bulkScreenCandidates, isScreeningPending } from "@/lib/api/screening";
 import api from "@/lib/axios";
 import { cn } from "@/lib/utils";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -64,9 +66,11 @@ import {
   MapPin,
   Phone,
   Search,
+  Sparkles,
   Trophy,
   User,
   Users,
+  X,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
@@ -206,6 +210,22 @@ const CandidatesPage: React.FC = () => {
   const [passedNote, setPassedNote] = useState<string>(() =>
     getSessionState("candidates_passedNote", ""),
   );
+  // AI Screening filters
+  const [aiStatus, setAiStatus] = useState<string>(() =>
+    getSessionState("candidates_aiStatus", ""),
+  );
+  const [aiScoreMin, setAiScoreMin] = useState<string>(() =>
+    getSessionState("candidates_aiScoreMin", ""),
+  );
+  const [aiScoreMax, setAiScoreMax] = useState<string>(() =>
+    getSessionState("candidates_aiScoreMax", ""),
+  );
+  const [aiSort, setAiSort] = useState<string>(() =>
+    getSessionState("candidates_aiSort", ""),
+  );
+  // Bulk selection for AI screening
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkScreening, setIsBulkScreening] = useState(false);
 
   // Applied Filter states (for API)
   const defaultAppliedFilters = {
@@ -222,6 +242,10 @@ const CandidatesPage: React.FC = () => {
     isChecked: "",
     isPassed: "",
     passedNote: "",
+    aiStatus: "",
+    aiScoreMin: "",
+    aiScoreMax: "",
+    aiSort: "",
   };
   const [appliedFilters, setAppliedFilters] = useState(() => {
     const val = getSessionState(
@@ -264,6 +288,10 @@ const CandidatesPage: React.FC = () => {
     sessionStorage.setItem("candidates_isChecked", JSON.stringify(isChecked));
     sessionStorage.setItem("candidates_isPassed", JSON.stringify(isPassed));
     sessionStorage.setItem("candidates_passedNote", JSON.stringify(passedNote));
+    sessionStorage.setItem("candidates_aiStatus", JSON.stringify(aiStatus));
+    sessionStorage.setItem("candidates_aiScoreMin", JSON.stringify(aiScoreMin));
+    sessionStorage.setItem("candidates_aiScoreMax", JSON.stringify(aiScoreMax));
+    sessionStorage.setItem("candidates_aiSort", JSON.stringify(aiSort));
     sessionStorage.setItem(
       "candidates_appliedFilters",
       JSON.stringify(appliedFilters),
@@ -284,6 +312,10 @@ const CandidatesPage: React.FC = () => {
     isChecked,
     isPassed,
     passedNote,
+    aiStatus,
+    aiScoreMin,
+    aiScoreMax,
+    aiSort,
     appliedFilters,
   ]);
 
@@ -302,6 +334,10 @@ const CandidatesPage: React.FC = () => {
       isChecked,
       isPassed,
       passedNote,
+      aiStatus,
+      aiScoreMin,
+      aiScoreMax,
+      aiSort,
     });
     setPage(1);
   };
@@ -320,6 +356,10 @@ const CandidatesPage: React.FC = () => {
     setIsChecked("");
     setIsPassed("");
     setPassedNote("");
+    setAiStatus("");
+    setAiScoreMin("");
+    setAiScoreMax("");
+    setAiSort("");
     setAppliedFilters(defaultAppliedFilters);
     setPage(1);
   };
@@ -437,6 +477,10 @@ const CandidatesPage: React.FC = () => {
       appliedFilters.isChecked,
       appliedFilters.isPassed,
       appliedFilters.passedNote,
+      appliedFilters.aiStatus,
+      appliedFilters.aiScoreMin,
+      appliedFilters.aiScoreMax,
+      appliedFilters.aiSort,
     ],
     queryFn: () =>
       getCandidates({
@@ -485,9 +529,30 @@ const CandidatesPage: React.FC = () => {
           appliedFilters.passedNote.trim() && {
             passed_note: appliedFilters.passedNote.trim(),
           }),
+        ...(appliedFilters.aiStatus &&
+          appliedFilters.aiStatus !== "all" && {
+            ai_status: appliedFilters.aiStatus,
+          }),
+        ...(appliedFilters.aiScoreMin !== "" && {
+          ai_score_min: appliedFilters.aiScoreMin,
+        }),
+        ...(appliedFilters.aiScoreMax !== "" && {
+          ai_score_max: appliedFilters.aiScoreMax,
+        }),
+        ...(appliedFilters.aiSort &&
+          appliedFilters.aiSort !== "none" && {
+            sort_by: "ai_score",
+            sort_direction: appliedFilters.aiSort,
+          }),
       }),
     placeholderData: keepPreviousData,
     refetchOnMount: "always",
+    // Selama ada kandidat di halaman ini yang masih dalam antrean/proses AI screening,
+    // poll setiap 5 detik agar skor muncul otomatis tanpa reload.
+    refetchInterval: (query) => {
+      const rows = query.state.data?.data?.data ?? [];
+      return rows.some((c) => isScreeningPending(c.latest_ai_screening)) ? 5000 : false;
+    },
   });
 
   // Always fetch latest data when opening the page
@@ -507,6 +572,64 @@ const CandidatesPage: React.FC = () => {
     : [];
   const totalPages = Math.max(1, candidatesResponse?.data?.last_page || 1);
   const totalItems = candidatesResponse?.data?.total || 0;
+
+  // ---- Bulk AI screening selection ----
+  const pageIds = candidates.map((c) => Number(c.CanId));
+  const allOnPageSelected =
+    pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const someOnPageSelected = pageIds.some((id) => selectedIds.has(id));
+
+  const toggleSelectAllOnPage = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkScreening = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setIsBulkScreening(true);
+    try {
+      const res = await bulkScreenCandidates(ids);
+      if (res.success) {
+        const skippedCount = res.data.skipped_count ?? 0;
+        toast.success(
+          `${res.data.queued_count} kandidat masuk antrean AI screening` +
+            (skippedCount > 0 ? `, ${skippedCount} dilewati` : ""),
+          {
+            description:
+              skippedCount > 0
+                ? Object.entries(res.data.skipped)
+                    .slice(0, 3)
+                    .map(([id, reason]) => `#${id}: ${reason}`)
+                    .join(" · ")
+                : "Skor akan muncul otomatis saat worker selesai.",
+          },
+        );
+        setSelectedIds(new Set());
+        refetch();
+      } else {
+        toast.error(res.message || "Gagal mengantrekan AI screening");
+      }
+    } catch (err: unknown) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error(message || (err instanceof Error ? err.message : "Gagal mengantrekan AI screening"));
+    } finally {
+      setIsBulkScreening(false);
+    }
+  };
 
   // State loading per kandidat
   const [loadingApply, setLoadingApply] = useState<{
@@ -974,6 +1097,69 @@ const CandidatesPage: React.FC = () => {
                 </Select>
               </div>
 
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  AI Screening
+                </label>
+                <Select value={aiStatus} onValueChange={setAiStatus}>
+                  <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                    <SelectValue placeholder="Semua" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    <SelectItem value="screened">Sudah ada skor</SelectItem>
+                    <SelectItem value="none">Belum di-screening</SelectItem>
+                    <SelectItem value="pending">Dalam antrean / proses</SelectItem>
+                    <SelectItem value="failed">Gagal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Skor AI (Min - Max)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="0"
+                    className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                    value={aiScoreMin}
+                    onChange={(e) => setAiScoreMin(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                  />
+                  <span className="text-slate-400 text-sm">-</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="100"
+                    className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                    value={aiScoreMax}
+                    onChange={(e) => setAiScoreMax(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Urutkan Skor AI
+                </label>
+                <Select value={aiSort} onValueChange={setAiSort}>
+                  <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                    <SelectValue placeholder="Default" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Default</SelectItem>
+                    <SelectItem value="desc">Skor tertinggi dulu</SelectItem>
+                    <SelectItem value="asc">Skor terendah dulu</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="flex flex-col gap-2 sm:col-span-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Catatan Lolos Seleksi
@@ -1011,12 +1197,70 @@ const CandidatesPage: React.FC = () => {
         )}
       </div>
 
+      {/* Bulk AI screening action bar */}
+      {selectedIds.size > 0 && (
+        <div className="w-full mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-orange-200 dark:border-orange-900/60 bg-orange-50/70 dark:bg-orange-950/20 px-4 py-3">
+          <div className="flex items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+            <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-full bg-[#FF6905] px-2 text-xs font-bold text-white">
+              {selectedIds.size}
+            </span>
+            <span className="font-medium">kandidat dipilih untuk AI Screening</span>
+            <span className="hidden md:inline text-xs text-slate-500">
+              Diproses di background (queue); skor muncul otomatis di kolom AI Score.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 text-slate-600 dark:text-slate-300"
+              onClick={() => setSelectedIds(new Set())}
+              disabled={isBulkScreening}
+            >
+              <X className="w-4 h-4 mr-1" /> Batal pilih
+            </Button>
+            <Button
+              size="sm"
+              className="h-9 bg-[#FF6905] hover:bg-[#e35e04] text-white font-medium px-4 shadow-sm"
+              onClick={handleBulkScreening}
+              disabled={isBulkScreening}
+            >
+              {isBulkScreening ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              Screening AI ({selectedIds.size})
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Full-Width Data Table Container */}
       <div className="w-full flex flex-col flex-1 bg-white dark:bg-slate-900 shadow-sm border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
         <div className="w-full overflow-x-auto">
           <table className="w-full text-left whitespace-nowrap min-w-[1000px]">
             <thead className="bg-slate-50/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800">
               <tr className="text-[12px] font-semibold tracking-wider text-slate-500 uppercase">
+                <th className="pl-5 pr-2 py-4 w-12">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <Checkbox
+                            aria-label="Pilih semua kandidat di halaman ini"
+                            checked={allOnPageSelected ? true : someOnPageSelected ? "indeterminate" : false}
+                            onCheckedChange={toggleSelectAllOnPage}
+                            className="data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500 data-[state=indeterminate]:bg-orange-500 data-[state=indeterminate]:border-orange-500"
+                          />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        Pilih semua di halaman ini untuk AI Screening
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </th>
                 <th className="px-6 py-4 w-40">ID Code</th>
                 <th className="px-6 py-4 md:sticky md:left-0 z-20 bg-slate-50 dark:bg-slate-900  border-slate-200 dark:border-slate-800">
                   Name
@@ -1030,13 +1274,14 @@ const CandidatesPage: React.FC = () => {
                 <th className="px-6 py-4">Tanggal Daftar</th>
                 <th className="px-6 py-4">Checked</th>
                 <th className="px-6 py-4">Lolos Seleksi</th>
+                <th className="px-6 py-4">AI Score</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={12}>
+                  <td colSpan={14}>
                     <div className="flex flex-col items-center justify-center gap-4 py-24">
                       <Activity className="w-8 h-8 text-orange-500 animate-pulse" />
                       <p className="text-sm font-semibold text-slate-400 tracking-wider uppercase">
@@ -1047,7 +1292,7 @@ const CandidatesPage: React.FC = () => {
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={12}>
+                  <td colSpan={14}>
                     <div className="flex flex-col items-center justify-center gap-3 py-24">
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
                         <Search className="w-8 h-8 text-slate-300" />
@@ -1070,8 +1315,19 @@ const CandidatesPage: React.FC = () => {
                   return (
                     <tr
                       key={candidate.CanId}
-                      className="group hover:bg-orange-50 dark:hover:bg-slate-800/80 transition-colors"
+                      className={cn(
+                        "group hover:bg-orange-50 dark:hover:bg-slate-800/80 transition-colors",
+                        selectedIds.has(Number(candidate.CanId)) && "bg-orange-50/60 dark:bg-slate-800/60",
+                      )}
                     >
+                      <td className="pl-5 pr-2 py-4 w-12">
+                        <Checkbox
+                          aria-label={`Pilih ${candidate.CanName ?? candidate.CanId} untuk AI Screening`}
+                          checked={selectedIds.has(Number(candidate.CanId))}
+                          onCheckedChange={() => toggleSelect(Number(candidate.CanId))}
+                          className="data-[state=checked]:bg-orange-500 data-[state=checked]:border-orange-500"
+                        />
+                      </td>
                       <td className="px-6 py-4 w-40 text-xs font-mono font-medium text-slate-500">
                         {candidate.CanCode || "-"}
                       </td>
@@ -1414,6 +1670,15 @@ const CandidatesPage: React.FC = () => {
                             </span>
                           )}
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <AiScoreChip
+                          latest={candidate.latest_ai_screening}
+                          latestDone={candidate.latest_done_ai_screening}
+                          onClick={() =>
+                            navigate(`/admin/candidates/${candidate.CanId}`)
+                          }
+                        />
                       </td>
                       <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button

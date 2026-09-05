@@ -6,6 +6,10 @@ import { defineConfig } from "vite";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    host: true, // listen on all interfaces so the dev server is reachable from other machines
+    port: 5174,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

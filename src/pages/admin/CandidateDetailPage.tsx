@@ -1,3 +1,4 @@
+import AiScreeningPanel from "@/components/AiScreeningPanel";
 import CandidateEditModal from "@/components/CandidateEditModal";
 import DocumentPreview from "@/components/DocumentPreview";
 import {
@@ -55,6 +56,7 @@ import {
   Phone,
   Printer,
   RefreshCw,
+  ScanSearch,
   Share2,
   Trash2,
   Upload,
@@ -917,6 +919,23 @@ const CandidateDetailPage: React.FC = () => {
                 </div>
               </SectionBlock>
             )}
+
+            {/* AI Screening (CV + data kandidat) */}
+            <SectionBlock icon={ScanSearch} title="AI Screening">
+              <AiScreeningPanel
+                candidateId={candidate.CanId ?? (id as string)}
+                documents={documents.map((doc) => ({
+                  id: Number(doc.CanDocId),
+                  label: doc.CanDocDesc || doc.CanDocFile || `Dokumen ${doc.CanDocId}`,
+                  filename: doc.CanDocFile ?? null,
+                }))}
+                jobs={jobExpected.map((item) => ({
+                  id: Number(item.CanJobExpectedId),
+                  label: getJobExpectedName(item),
+                  priority: item?.Priority ?? null,
+                }))}
+              />
+            </SectionBlock>
 
             {/* Work Experience */}
             <SectionBlock icon={Activity} title="Work Experience">

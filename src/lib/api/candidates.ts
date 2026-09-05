@@ -8,6 +8,7 @@ export const postApplyToSqlServer = async (
   return response.data;
 };
 import api from "../axios";
+import type { ScreeningSummary } from "./screening";
 
 export interface CandidateAddress {
   CanId?: string;
@@ -362,6 +363,8 @@ export interface Candidate {
   passed_at?: string | null;
   passed_by?: string | null;
   passed_note?: string | null;
+  latest_ai_screening?: ScreeningSummary | null;
+  latest_done_ai_screening?: ScreeningSummary | null;
 }
 
 export interface CandidatePaginationData {
@@ -406,6 +409,10 @@ export interface CandidateFilters {
   EduMjrName?: string | string[];
   is_checked?: string | boolean | number;
   is_passed?: string | boolean | number;
+  ai_status?: string;
+  ai_score_min?: string | number;
+  ai_score_max?: string | number;
+  ai_recommendation?: string;
   [key: string]: any; // Allow dynamic column filters
 }
 
