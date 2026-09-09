@@ -11,7 +11,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   getCandidateScreening,
+  llmProviderLabel,
   runCandidateScreening,
+  type LlmProvider,
   type ScreeningRecord,
   type ScreeningResult,
   type ScreeningSummary,
@@ -79,6 +81,14 @@ const scoreTone = (score?: number | null) => {
   if (score >= 50) return { text: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500", ring: "border-amber-200 dark:border-amber-900" };
   return { text: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500", ring: "border-rose-200 dark:border-rose-900" };
 };
+
+/**
+ * Chip for free-text items from the LLM (skills, certifications). The base Badge is a one-line pill
+ * (`whitespace-nowrap shrink-0`), which made long entries like "Preventive & corrective maintenance
+ * excavator tambang (EX2500, ...)" run under the neighbouring column; these wrap instead.
+ */
+const TAG_CLASS =
+  "text-xs font-normal whitespace-normal break-words text-left justify-start max-w-full h-auto rounded-md px-2 py-1 leading-snug";
 
 const recommendationBadge = (rec?: string | null) => {
   const value = (rec ?? "").toLowerCase();
@@ -196,12 +206,28 @@ const ScreeningResultView = ({ record }: { record: ScreeningRecord }) => {
           <p className="text-[11px] text-slate-400 flex flex-wrap gap-x-3">
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatDateTime(record.createdAt)}</span>
             {record.createdBy && <span>oleh {record.createdBy}</span>}
-            {record.provider && <span>model: {record.provider}{record.model ? ` / ${record.model}` : ""}</span>}
+            {record.provider && <span>model: {llmProviderLabel(record.provider)}{record.model ? ` / ${record.model}` : ""}</span>}
             {formatDuration(record.duration_ms) && <span>{formatDuration(record.duration_ms)}</span>}
             {result.cv_truncated && <span className="text-amber-500">CV dipotong (terlalu panjang)</span>}
+            {result.cv_ocr && (
+              <span className="text-amber-500" title="CV hasil scan dibaca lewat OCR; nama dan angka bisa salah baca">
+                CV dibaca via OCR
+              </span>
+            )}
           </p>
         </div>
       </div>
+
+      {/* CV skipped notice (e.g. scanned PDF): result is based on candidate data only */}
+      {record.document_id && result.cv_error && (
+        <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/20 text-xs text-amber-700 dark:text-amber-300 flex gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div>
+            <div className="font-medium">CV tidak terbaca, penilaian hanya memakai data kandidat</div>
+            <div className="mt-0.5 break-words">{result.cv_error}</div>
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       {result.summary && (
@@ -230,23 +256,24 @@ const ScreeningResultView = ({ record }: { record: ScreeningRecord }) => {
       </div>
 
       {(profile.key_skills?.length || profile.certifications?.length) ? (
+        // min-w-0 on the columns so long chips wrap inside their column instead of spilling into the next one
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {profile.key_skills && profile.key_skills.length > 0 && (
-            <div>
+            <div className="min-w-0">
               <SubHeading>Keahlian Utama</SubHeading>
               <div className="flex flex-wrap gap-1.5">
                 {profile.key_skills.map((s, i) => (
-                  <Badge key={i} variant="secondary" className="text-xs font-normal">{s}</Badge>
+                  <Badge key={i} variant="secondary" className={TAG_CLASS}>{s}</Badge>
                 ))}
               </div>
             </div>
           )}
           {profile.certifications && profile.certifications.length > 0 && (
-            <div>
+            <div className="min-w-0">
               <SubHeading>Sertifikasi</SubHeading>
               <div className="flex flex-wrap gap-1.5">
                 {profile.certifications.map((s, i) => (
-                  <Badge key={i} variant="outline" className="text-xs font-normal">{s}</Badge>
+                  <Badge key={i} variant="outline" className={TAG_CLASS}>{s}</Badge>
                 ))}
               </div>
             </div>
@@ -350,9 +377,14 @@ const AiScreeningPanel = ({ candidateId, documents, jobs }: AiScreeningPanelProp
   const [jobId, setJobId] = useState<string>("auto");
   const [extraRequirements, setExtraRequirements] = useState("");
   const [manualPosition, setManualPosition] = useState("");
+  // "auto" = provider default server (AI_SCREENING_PROVIDER); selain itu id provider eksplisit
+  const [provider, setProvider] = useState<string>("auto");
   const [isRunning, setIsRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [viewRecord, setViewRecord] = useState<ScreeningRecord | null>(null);
+
+  const providerOptions = useMemo(() => Object.entries(aiServer?.providers ?? {}), [aiServer]);
+  const effectiveProvider = provider === "auto" ? aiServer?.default_provider ?? null : provider;
 
   // Elapsed-time ticker while a run is in flight (local LLM can take >1 minute).
   useEffect(() => {
@@ -382,6 +414,7 @@ const AiScreeningPanel = ({ candidateId, documents, jobs }: AiScreeningPanelProp
         job_expected_id: jobId === "auto" ? defaultJob?.id ?? null : Number(jobId),
         position: manualPosition.trim() || undefined,
         requirements: extraRequirements.trim() || undefined,
+        provider: provider === "auto" ? undefined : (provider as LlmProvider),
       };
       const res = await runCandidateScreening(candidateId, payload);
       if (res.success && res.data) {
@@ -419,7 +452,7 @@ const AiScreeningPanel = ({ candidateId, documents, jobs }: AiScreeningPanelProp
           {aiServer && (
             <span className={`flex items-center gap-1.5 ${serverUnavailable ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400"}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${serverUnavailable ? "bg-rose-500" : "bg-emerald-500"}`} />
-              AI server {serverUnavailable ? "tidak tersedia" : `siap${aiServer.default_provider ? ` (${aiServer.default_provider})` : ""}`}
+              AI server {serverUnavailable ? "tidak tersedia" : `siap${effectiveProvider ? ` (${llmProviderLabel(effectiveProvider)})` : ""}`}
             </span>
           )}
         </div>
@@ -478,6 +511,25 @@ const AiScreeningPanel = ({ candidateId, documents, jobs }: AiScreeningPanelProp
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500">Model AI (LLM)</Label>
+            <Select value={provider} onValueChange={setProvider}>
+              <SelectTrigger className="h-9 text-sm bg-white dark:bg-slate-900"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">
+                  Otomatis{aiServer?.default_provider ? ` (${llmProviderLabel(aiServer.default_provider)})` : ""}
+                </SelectItem>
+                {providerOptions.map(([id, info]) => (
+                  <SelectItem key={id} value={id} disabled={info.available === false}>
+                    {llmProviderLabel(id)}{info.model ? ` — ${info.model}` : ""}{info.available === false ? " (tidak aktif)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-slate-400">
+              Ollama Cloud (ollama.com) biasanya selesai dalam hitungan detik; Ollama lokal bisa 1–2 menit.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-slate-500">Posisi manual (opsional, menimpa nama posisi lamaran)</Label>
@@ -580,7 +632,7 @@ const AiScreeningPanel = ({ candidateId, documents, jobs }: AiScreeningPanelProp
                     <span className="flex-1 min-w-0">
                       <span className="block font-medium text-slate-700 dark:text-slate-300 truncate">{h.position}</span>
                       <span className="block text-slate-400">
-                        {formatDateTime(h.createdAt)}{h.createdBy ? ` · ${h.createdBy}` : ""}{h.provider ? ` · ${h.provider}` : ""}
+                        {formatDateTime(h.createdAt)}{h.createdBy ? ` · ${h.createdBy}` : ""}{h.provider ? ` · ${llmProviderLabel(h.provider)}` : ""}
                       </span>
                     </span>
                     <span className="text-slate-400">{h.status === "failed" ? "gagal" : h.recommendation || "-"}</span>

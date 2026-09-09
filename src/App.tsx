@@ -14,6 +14,7 @@ const CareerPage = lazy(() => import('./pages/CareerPage'));
 const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const TestingDevelopment = lazy(() => import('./pages/TestingDevelopment'));
+const CandidateInterviewPage = lazy(() => import('./pages/interview/CandidateInterviewPage'));
 
 const App = () => {
   return (
@@ -24,6 +25,8 @@ const App = () => {
         <Route path="/testing-development" element={<TestingDevelopment />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
+        {/* Kandidat: AI Interview via link undangan + kode akses dari HR (publik, tanpa login admin) */}
+        <Route path="/interview/:token" element={<CandidateInterviewPage />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="jobs" element={<JobsPage />} />

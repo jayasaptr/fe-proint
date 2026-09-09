@@ -8,6 +8,7 @@ export const postApplyToSqlServer = async (
   return response.data;
 };
 import api from "../axios";
+import type { InterviewSummary } from "./interview";
 import type { ScreeningSummary } from "./screening";
 
 export interface CandidateAddress {
@@ -285,6 +286,19 @@ export interface CandidatePhoto {
   UpdDate?: string;
   UpdUser?: string;
   Updflag?: string;
+  AssetKey?: string | null;
+  AssetUrl?: string | null;
+  AssetFileName?: string | null;
+  AssetContentType?: string | null;
+  AssetFileSize?: number | null;
+  /**
+   * Direct asset-service URL. Requires the service API key, so the browser
+   * cannot load it directly — always go through previewCandidatePhoto().
+   */
+  photo_url?: string | null;
+  /** True when the photo has content (asset service or legacy blob). */
+  has_photo?: boolean;
+  /** Legacy field from old API responses; no longer sent by the backend. */
   can_photo_base64?: string | null;
 }
 
@@ -365,6 +379,8 @@ export interface Candidate {
   passed_note?: string | null;
   latest_ai_screening?: ScreeningSummary | null;
   latest_done_ai_screening?: ScreeningSummary | null;
+  latest_ai_interview?: InterviewSummary | null;
+  latest_completed_ai_interview?: InterviewSummary | null;
 }
 
 export interface CandidatePaginationData {
@@ -548,6 +564,25 @@ export const previewCandidateDocument = async (
   const filename = match?.[1] ? decodeURIComponent(match[1]) : null;
 
   return { blob, mimeType, filename };
+};
+
+/**
+ * Fetch the candidate profile photo as a Blob via the authenticated preview
+ * endpoint. The backend streams the file from the asset service (or the legacy
+ * blob column), so the asset-service key never reaches the browser.
+ */
+export const previewCandidatePhoto = async (
+  canId: string | number,
+  photoId: number | string,
+): Promise<Blob> => {
+  const response = await api.get(
+    `${localApiBaseUrl}/candidates/${canId}/photos/${photoId}/preview`,
+    {
+      responseType: "blob",
+    },
+  );
+
+  return response.data;
 };
 
 export const downloadCandidateAttachments = async (

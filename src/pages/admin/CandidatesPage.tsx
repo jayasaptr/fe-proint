@@ -1,4 +1,6 @@
 import AiScoreChip from "@/components/AiScoreChip";
+import InterviewScoreChip from "@/components/InterviewScoreChip";
+import { copyToClipboard } from "@/lib/clipboard";
 import { TablePagination } from "@/components/TablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -712,14 +714,14 @@ const CandidatesPage: React.FC = () => {
 
   const handleCopy = async (value: string, key: string, label: string) => {
     if (!value || value === "-") return;
-    try {
-      await navigator.clipboard.writeText(value);
+    // copyToClipboard punya fallback untuk halaman non-HTTPS (navigator.clipboard undefined di LAN dev)
+    if (await copyToClipboard(value)) {
       setCopiedKey(key);
       toast.success(`${label} copied`);
       setTimeout(() => {
         setCopiedKey((prev) => (prev === key ? null : prev));
       }, 1500);
-    } catch {
+    } else {
       toast.error(`Failed to copy ${label.toLowerCase()}`);
     }
   };
@@ -1672,13 +1674,28 @@ const CandidatesPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <AiScoreChip
-                          latest={candidate.latest_ai_screening}
-                          latestDone={candidate.latest_done_ai_screening}
-                          onClick={() =>
-                            navigate(`/admin/candidates/${candidate.CanId}`)
-                          }
-                        />
+                        <div className="flex flex-col gap-1.5 items-start">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-14 text-[10px] font-semibold uppercase tracking-wider text-slate-400">CV</span>
+                            <AiScoreChip
+                              latest={candidate.latest_ai_screening}
+                              latestDone={candidate.latest_done_ai_screening}
+                              onClick={() =>
+                                navigate(`/admin/candidates/${candidate.CanId}`)
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-14 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Interview</span>
+                            <InterviewScoreChip
+                              latest={candidate.latest_ai_interview}
+                              latestCompleted={candidate.latest_completed_ai_interview}
+                              onClick={() =>
+                                navigate(`/admin/candidates/${candidate.CanId}#ai-interview`)
+                              }
+                            />
+                          </div>
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button

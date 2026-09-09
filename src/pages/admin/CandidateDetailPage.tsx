@@ -1,3 +1,4 @@
+import AiInterviewPanel from "@/components/AiInterviewPanel";
 import AiScreeningPanel from "@/components/AiScreeningPanel";
 import CandidateEditModal from "@/components/CandidateEditModal";
 import DocumentPreview from "@/components/DocumentPreview";
@@ -25,6 +26,7 @@ import {
   getCandidateById,
   postApplyToSqlServer,
   previewCandidateDocument,
+  previewCandidatePhoto,
   uploadCandidateDocuments,
   uploadCandidatePhoto,
   type CandidateDetailResponse,
@@ -51,6 +53,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Mic,
   MoreHorizontal,
   Pencil,
   Phone,
@@ -250,18 +253,69 @@ const CandidateDetailPage: React.FC = () => {
   const skills = candidate?.skills || [];
   const languages = candidate?.languages || [];
 
-  const photoSource = useMemo(() => {
+  // Default photo record (FgDefault = 'Y', fallback to the first one).
+  const defaultPhoto = useMemo(() => {
     if (!candidate?.photos || candidate.photos.length === 0) return null;
-    const defaultPhoto =
+    return (
       candidate.photos.find(
         (photo: any) => photo.FgDefault?.toUpperCase() === "Y",
-      ) || candidate.photos[0];
+      ) || candidate.photos[0]
+    );
+  }, [candidate?.photos]);
+
+  // Legacy responses embedded the image as base64. New responses only expose
+  // photo_url (asset service, needs the service key) and has_photo, so the
+  // image must be streamed through the authenticated preview endpoint.
+  const legacyPhotoSource = useMemo(() => {
     const rawPhoto = defaultPhoto?.can_photo_base64?.replace(/\s+/g, "");
     if (!rawPhoto) return null;
     return rawPhoto.startsWith("data:image")
       ? rawPhoto
       : `data:image/jpeg;base64,${rawPhoto}`;
-  }, [candidate?.photos]);
+  }, [defaultPhoto?.can_photo_base64]);
+
+  const [photoSource, setPhotoSource] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (legacyPhotoSource) {
+      setPhotoSource(legacyPhotoSource);
+      return;
+    }
+
+    const photoId = defaultPhoto?.CanPhotoId;
+    if (
+      !candidate?.CanId ||
+      photoId === undefined ||
+      photoId === null ||
+      defaultPhoto?.has_photo === false
+    ) {
+      setPhotoSource(null);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    previewCandidatePhoto(candidate.CanId, photoId)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPhotoSource(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoSource(null);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [
+    candidate?.CanId,
+    defaultPhoto?.CanPhotoId,
+    defaultPhoto?.has_photo,
+    legacyPhotoSource,
+  ]);
 
   const expectedSalaryFromQuestions = useMemo(() => {
     // Get first experience with questions
@@ -936,6 +990,21 @@ const CandidateDetailPage: React.FC = () => {
                 }))}
               />
             </SectionBlock>
+
+            {/* AI Interview (undangan link + kode akses, hasil wawancara AI) */}
+            <div id="ai-interview">
+              <SectionBlock icon={Mic} title="AI Interview">
+                <AiInterviewPanel
+                  candidateId={candidate.CanId ?? (id as string)}
+                  candidateName={candidate.CanName ?? ""}
+                  jobs={jobExpected.map((item) => ({
+                    id: Number(item.CanJobExpectedId),
+                    label: getJobExpectedName(item),
+                    priority: item?.Priority ?? null,
+                  }))}
+                />
+              </SectionBlock>
+            </div>
 
             {/* Work Experience */}
             <SectionBlock icon={Activity} title="Work Experience">

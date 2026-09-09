@@ -5,6 +5,27 @@ import api from "@/lib/axios";
 const localApiBaseUrl =
   import.meta.env.VITE_API_URL_LOCAL || import.meta.env.VITE_API_URL;
 
+/** LLM provider di server AI: Gemini (Google), Ollama lokal, atau Ollama Cloud (ollama.com). */
+export type LlmProvider = "gemini" | "ollama" | "ollama_cloud";
+
+export const LLM_PROVIDER_LABELS: Record<string, string> = {
+  gemini: "Gemini (cloud)",
+  ollama: "Ollama (lokal)",
+  ollama_cloud: "Ollama Cloud",
+};
+
+/** Label ramah untuk id provider; id yang tidak dikenal ditampilkan apa adanya. */
+export const llmProviderLabel = (provider?: string | null): string =>
+  provider ? LLM_PROVIDER_LABELS[provider] ?? provider : "";
+
+export interface AiServerProvider {
+  label?: string;
+  model?: string;
+  /** false = the AI server refuses this provider outright (e.g. OLLAMA_LOCAL_ENABLED=false). */
+  enabled?: boolean;
+  available?: boolean;
+}
+
 export type ScreeningRecommendation =
   | "lanjut interview"
   | "pertimbangkan"
@@ -49,7 +70,12 @@ export interface ScreeningResult {
   };
   suggested_questions?: string[];
   provider?: string;
+  model?: string;
   source?: string;
+  /** Alasan CV dilewati (mis. PDF hasil scan) saat penilaian hanya memakai data kandidat. */
+  cv_error?: string | null;
+  /** True bila CV hasil scan dibaca lewat OCR (nama/angka bisa salah baca). */
+  cv_ocr?: boolean;
   cv_chars?: number;
   cv_truncated?: boolean;
   profile_chars?: number;
@@ -83,7 +109,7 @@ export interface AiServerStatus {
   enabled: boolean;
   reachable: boolean;
   default_provider?: string | null;
-  providers?: Record<string, { model?: string; available?: boolean }>;
+  providers?: Record<string, AiServerProvider>;
   error?: string;
 }
 
@@ -102,7 +128,7 @@ export interface ScreeningRunPayload {
   document_id?: number | null;
   position?: string;
   requirements?: string;
-  provider?: "gemini" | "ollama";
+  provider?: LlmProvider;
 }
 
 export interface ScreeningRunResponse {
@@ -168,7 +194,7 @@ export interface BulkScreeningResponse {
 
 export const bulkScreenCandidates = async (
   candidateIds: number[],
-  options: { provider?: "gemini" | "ollama"; requirements?: string } = {},
+  options: { provider?: LlmProvider; requirements?: string } = {},
 ): Promise<BulkScreeningResponse> => {
   const response = await api.post(
     `${localApiBaseUrl}/candidates/ai-screening/bulk`,
