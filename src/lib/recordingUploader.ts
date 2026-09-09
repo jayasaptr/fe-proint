@@ -23,13 +23,27 @@ export class RecordingUploader {
   private broken = false;
   private failureMessage: string | null = null;
 
+  private readonly token: string;
+  private readonly sessionToken: string;
+  private readonly mimeType: string;
+  private readonly getInterruptions: () => number;
+  private readonly onError?: (message: string) => void;
+
+  // Explicit field assignments instead of TS parameter properties: tsconfig has
+  // `erasableSyntaxOnly`, which only allows syntax that can be stripped without emit.
   constructor(
-    private readonly token: string,
-    private readonly sessionToken: string,
-    private readonly mimeType: string,
-    private readonly getInterruptions: () => number,
-    private readonly onError?: (message: string) => void,
-  ) {}
+    token: string,
+    sessionToken: string,
+    mimeType: string,
+    getInterruptions: () => number,
+    onError?: (message: string) => void,
+  ) {
+    this.token = token;
+    this.sessionToken = sessionToken;
+    this.mimeType = mimeType;
+    this.getInterruptions = getInterruptions;
+    this.onError = onError;
+  }
 
   /** MediaRecorder `dataavailable` handler. */
   push(blob: Blob): void {
