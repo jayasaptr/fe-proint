@@ -61,7 +61,7 @@ export interface InterviewSummary {
   recording_segments?: { segment: number; file_id: string; url: string; size?: number | null }[];
   recording_size?: number | null;
   recording_error?: string | null;
-  /** Berapa kali kandidat menghentikan share layar (wajib) di tengah sesi. */
+  /** Berapa kali sesi terjeda: share layar dihentikan (laptop/PC) atau kandidat meninggalkan halaman (HP). */
   screen_interruptions?: number;
   expires_at?: string | null;
   started_at?: string | null;

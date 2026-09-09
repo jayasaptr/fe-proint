@@ -138,8 +138,9 @@ const formatBytes = (bytes?: number | null) => {
 };
 
 /**
- * Rekaman sesi (layar wajib + kamera + suara) yang diunggah ke DH Asset, plus berapa kali kandidat
- * menghentikan share layar. Beberapa segmen muncul bila kandidat me-refresh/masuk lagi di tengah sesi.
+ * Rekaman sesi yang diunggah ke DH Asset (laptop/PC: layar wajib + kamera + suara; HP: kamera +
+ * suara), plus berapa kali sesi terjeda (share layar dihentikan, atau kandidat berpindah aplikasi di
+ * HP). Beberapa segmen muncul bila kandidat me-refresh/masuk lagi di tengah sesi.
  */
 const RecordingInfo = ({ record }: { record: InterviewSummary }) => {
   const status = record.recording_status;
@@ -151,7 +152,7 @@ const RecordingInfo = ({ record }: { record: InterviewSummary }) => {
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="flex items-center gap-1 text-slate-500"><Video className="w-3.5 h-3.5" /> Rekaman layar</span>
+      <span className="flex items-center gap-1 text-slate-500"><Video className="w-3.5 h-3.5" /> Rekaman sesi</span>
       {status === "uploaded" && segments.map((seg) => (
         <a
           key={seg.segment}
@@ -173,8 +174,12 @@ const RecordingInfo = ({ record }: { record: InterviewSummary }) => {
       )}
       {status === "missing" && <span className="text-slate-400">tidak ada rekaman dari browser kandidat</span>}
       {interruptions > 0 && (
-        <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/30">
-          <AlertTriangle className="w-3 h-3 mr-1" /> share layar terhenti {interruptions}×
+        <Badge
+          variant="outline"
+          className="text-[10px] border-amber-300 text-amber-700 bg-amber-50 dark:bg-amber-950/30"
+          title="Share layar dihentikan (laptop/PC) atau kandidat berpindah aplikasi/tab (HP)"
+        >
+          <AlertTriangle className="w-3 h-3 mr-1" /> sesi terjeda {interruptions}×
         </Badge>
       )}
     </div>

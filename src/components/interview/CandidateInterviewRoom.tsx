@@ -73,6 +73,14 @@ const requestScreenShare = async (): Promise<MediaStream> => {
   return stream;
 };
 
+/**
+ * Screen capture exists on desktop browsers only. Phones and tablets (Chrome Android, Safari iOS)
+ * have no getDisplayMedia, so the interview there runs in camera mode: camera + mic are recorded,
+ * screen share is not asked for, and leaving the page is counted instead of a stopped share.
+ */
+const isScreenShareSupported = (): boolean =>
+  typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getDisplayMedia === "function";
+
 const SILENCE_SUBMIT_MS = 2500; // pause listening and show the review step after this much silence (mic on)
 const REVIEW_AUTO_SEND_S = 15; // review step sends automatically after this many idle seconds
 const BARGE_IN_MIN_WORDS = 4; // sustained speech required to interrupt the AI voice
@@ -157,9 +165,14 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const finalPayloadRef = useRef<{ history: InterviewHistoryItem[]; qaExchanges: InterviewHistoryItem[]; durationSeconds: number; screenInterruptions: number } | null>(null);
 
-  // Session recording (mandatory screen share + camera PiP + mic) streamed to the portal while the
-  // interview runs; Laravel uploads the finished file to DH Asset on completion.
+  // Session recording streamed to the portal while the interview runs (desktop: mandatory screen
+  // share + camera PiP + mic; phone/tablet: camera + mic); Laravel uploads the finished file to DH
+  // Asset on completion.
   const recordingRequired = interview.recording_required !== false;
+  // Desktop: whole-screen share is mandatory. Mobile (no screen capture API): camera-only recording.
+  const [screenShareSupported] = useState(isScreenShareSupported);
+  const screenRequired = recordingRequired && screenShareSupported;
+  const cameraOnlyMode = recordingRequired && !screenShareSupported;
   const recorder = useSessionRecorder();
   const screenStreamRef = useRef<MediaStream | null>(null);
   const recordingAudioRef = useRef<MediaStream | null>(null); // mixed mic + AI voice, fed to the recorder
@@ -171,7 +184,9 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const uploaderRef = useRef<RecordingUploader | null>(null);
   const interruptionsRef = useRef(0);
   const [screenInterruptions, setScreenInterruptions] = useState(0);
-  const [screenLost, setScreenLost] = useState(false); // share stopped mid-session: interview blocked until re-shared
+  // Desktop: share stopped mid-session, interview blocked until re-shared.
+  // Camera mode: the candidate left the page (switched app/tab); blocked until they tap "Lanjutkan".
+  const [screenLost, setScreenLost] = useState(false);
   const [isResharing, setIsResharing] = useState(false);
   const [reshareError, setReshareError] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -350,8 +365,36 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     void stt.stop();
   };
 
-  /** Candidate stopped sharing: they must share the whole screen again before continuing. */
+  /**
+   * Camera mode: the candidate left the interview page (home button, another app or tab). Counted
+   * like a stopped share and the interview pauses until they come back and tap "Lanjutkan".
+   */
+  useEffect(() => {
+    if (!cameraOnlyMode || !["interviewing", "qa"].includes(phase)) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "hidden") return;
+      interruptionsRef.current += 1;
+      setScreenInterruptions(interruptionsRef.current);
+      setReshareError(null);
+      setScreenLost(true);
+      interruptTts();
+      void stt.stop();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraOnlyMode, phase]);
+
+  /**
+   * Resume after a pause. Desktop: the candidate must share the whole screen again. Camera mode:
+   * nothing to re-share, the recording never stopped; just unblock.
+   */
   const reshareScreen = async () => {
+    if (cameraOnlyMode) {
+      setScreenLost(false);
+      lastActivityRef.current = Date.now();
+      return;
+    }
     setIsResharing(true);
     setReshareError(null);
     try {
@@ -375,13 +418,18 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     const uploader = new RecordingUploader(
       token,
       sessionToken,
-      "video/webm",
+      recorder.getMimeType, // WebM on Chromium, MP4 on Safari: known only once recording starts
       () => interruptionsRef.current,
       (message) => setRecordingError(message),
     );
     uploaderRef.current = uploader;
     const ok = await recorder.start(
-      { screen: screenStreamRef.current, camera: cameraStreamRef.current, audio: recordingAudioRef.current },
+      {
+        screen: screenStreamRef.current,
+        camera: cameraStreamRef.current,
+        audio: recordingAudioRef.current,
+        screenRequired,
+      },
       { onData: (blob) => uploader.push(blob), onScreenEnded: handleScreenEnded },
     );
     if (!ok) uploaderRef.current = null;
@@ -410,11 +458,19 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
       return;
     }
     try {
-      // Video only: the STT hook owns the microphone stream
-      const camera = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+      // Video only: the STT hook owns the microphone stream. Front camera on phones; sizes are
+      // "ideal" so a phone camera without exact 720p still opens instead of failing.
+      const camera = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+        audio: false,
+      });
       cameraStreamRef.current = camera;
     } catch {
-      setCameraError("Kamera tidak tersedia. Interview tetap berjalan tanpa video.");
+      setCameraError(
+        cameraOnlyMode
+          ? "Kamera tidak tersedia. Izinkan akses kamera di browser HP Anda; interview tetap berjalan dengan suara."
+          : "Kamera tidak tersedia. Interview tetap berjalan tanpa video.",
+      );
     }
   };
 
@@ -725,8 +781,8 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     setIsStartingMedia(true);
     try {
       // Screen share first, straight from the click: getDisplayMedia needs a fresh user gesture and
-      // the interview cannot start without it.
-      if (recordingRequired && !(await startScreenShare())) return;
+      // the desktop interview cannot start without it. Skipped in camera mode (phone/tablet).
+      if (screenRequired && !(await startScreenShare())) return;
       // Load the Whisper model now, so the candidate's first answer is not delayed by the model load
       if (sttEngine === "whisper") warmupWhisper().catch(() => {});
       await startCamera();
@@ -734,7 +790,11 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
         await startRecordingAudio();
         if (!(await startRecording())) {
           stopMedia();
-          setError("Browser ini tidak dapat merekam sesi. Gunakan Chrome atau Edge terbaru di laptop/PC.");
+          setError(
+            cameraOnlyMode
+              ? "Browser ini tidak dapat merekam sesi. Gunakan Chrome terbaru (Android) atau Safari terbaru (iPhone/iPad), lalu izinkan kamera dan mikrofon."
+              : "Browser ini tidak dapat merekam sesi. Gunakan Chrome atau Edge terbaru di laptop/PC.",
+          );
           return;
         }
       }
@@ -912,18 +972,25 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
             <li>Berhenti bicara sekitar 2,5 detik dan jawaban terkirim otomatis, atau klik Kirim.</li>
             <li>Di akhir sesi Anda boleh bertanya balik tentang posisi atau perusahaan.</li>
             <li>Browser akan meminta izin kamera dan mikrofon.</li>
-            {recordingRequired && (
+            {screenRequired && (
               <li className="text-slate-700 dark:text-slate-300">
                 <span className="font-medium">Share seluruh layar wajib.</span> Saat klik Mulai, pilih{" "}
                 <span className="font-medium">"Seluruh layar"</span> (Entire screen), bukan satu jendela atau tab. Bila share
                 dihentikan, interview terjeda sampai layar dibagikan lagi. Gunakan Chrome atau Edge di laptop/PC.
               </li>
             )}
+            {cameraOnlyMode && (
+              <li className="text-slate-700 dark:text-slate-300">
+                <span className="font-medium">Interview lewat HP.</span> Kamera depan dan suara Anda direkam. Tetap di halaman ini
+                sampai selesai: bila Anda berpindah aplikasi atau tab, interview terjeda dan hal itu tercatat untuk tim HR.
+                Pastikan sinyal stabil dan baterai cukup.
+              </li>
+            )}
           </ul>
           {recordingRequired && (
             <p className="text-xs text-slate-500">
-              Dengan menekan Mulai, Anda menyetujui sesi ini direkam (layar, kamera, dan suara) dan disimpan oleh PT Darma Henwa Tbk
-              untuk keperluan penilaian rekrutmen.
+              Dengan menekan Mulai, Anda menyetujui sesi ini direkam ({cameraOnlyMode ? "kamera dan suara" : "layar, kamera, dan suara"})
+              dan disimpan oleh PT Darma Henwa Tbk untuk keperluan penilaian rekrutmen.
             </p>
           )}
           {history.length > 0 && (
@@ -933,14 +1000,14 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
           )}
         </div>
         <Button onClick={startInterview} disabled={isThinking || isStartingMedia} className="w-full h-11 bg-slate-900 hover:bg-slate-700 text-white dark:bg-slate-100 dark:text-slate-900">
-          {isThinking || isStartingMedia ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : recordingRequired ? <MonitorUp className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
+          {isThinking || isStartingMedia ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : screenRequired ? <MonitorUp className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
           {isStartingMedia
-            ? "Menyiapkan layar & kamera…"
+            ? screenRequired ? "Menyiapkan layar & kamera…" : "Menyiapkan kamera & mikrofon…"
             : isThinking
               ? "Menyiapkan…"
               : history.length > 0
-                ? recordingRequired ? "Bagikan Layar & Lanjutkan" : "Lanjutkan Interview"
-                : recordingRequired ? "Bagikan Layar & Mulai" : "Mulai Interview"}
+                ? screenRequired ? "Bagikan Layar & Lanjutkan" : "Lanjutkan Interview"
+                : screenRequired ? "Bagikan Layar & Mulai" : "Mulai Interview"}
         </Button>
       </div>
     );
@@ -999,11 +1066,13 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
               {recorder.isRecording && (
                 <span
                   className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                    recorder.screenLive ? "bg-rose-500/15 text-rose-300" : "bg-amber-400/15 text-amber-300"
+                    recorder.screenLive || cameraOnlyMode ? "bg-rose-500/15 text-rose-300" : "bg-amber-400/15 text-amber-300"
                   }`}
-                  title={recorder.screenLive ? "Layar, kamera, dan suara direkam" : "Share layar terhenti"}
+                  title={
+                    cameraOnlyMode ? "Kamera dan suara direkam" : recorder.screenLive ? "Layar, kamera, dan suara direkam" : "Share layar terhenti"
+                  }
                 >
-                  <span className={`h-1.5 w-1.5 rounded-full ${recorder.screenLive ? "animate-pulse bg-rose-400" : "bg-amber-400"}`} />
+                  <span className={`h-1.5 w-1.5 rounded-full ${recorder.screenLive || cameraOnlyMode ? "animate-pulse bg-rose-400" : "bg-amber-400"}`} />
                   REC
                 </span>
               )}
@@ -1015,11 +1084,13 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
               <div className="w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-[#15141d] p-6 text-white">
                 <div className="flex items-center gap-2 font-semibold text-rose-300">
-                  <MonitorUp className="h-5 w-5" /> Share layar dihentikan
+                  {cameraOnlyMode ? <AlertCircle className="h-5 w-5" /> : <MonitorUp className="h-5 w-5" />}
+                  {cameraOnlyMode ? "Anda meninggalkan halaman interview" : "Share layar dihentikan"}
                 </div>
                 <p className="text-sm leading-relaxed text-white/65">
-                  Interview dijeda. Share seluruh layar wajib selama sesi berlangsung. Bagikan layar lagi untuk melanjutkan; jeda
-                  ini tercatat untuk tim HR.
+                  {cameraOnlyMode
+                    ? "Interview dijeda. Tetap di halaman ini selama sesi berlangsung; jangan berpindah aplikasi atau tab. Jeda ini tercatat untuk tim HR."
+                    : "Interview dijeda. Share seluruh layar wajib selama sesi berlangsung. Bagikan layar lagi untuk melanjutkan; jeda ini tercatat untuk tim HR."}
                 </p>
                 {reshareError && (
                   <div className="flex gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">
@@ -1031,19 +1102,21 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
                   disabled={isResharing}
                   className="h-11 w-full rounded-xl bg-[#FFBE00] text-slate-900 shadow-none hover:bg-[#FFDC1E]"
                 >
-                  {isResharing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MonitorUp className="mr-2 h-4 w-4" />}
-                  Bagikan Seluruh Layar Lagi
+                  {isResharing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : cameraOnlyMode ? <Play className="mr-2 h-4 w-4" /> : <MonitorUp className="mr-2 h-4 w-4" />}
+                  {cameraOnlyMode ? "Lanjutkan Interview" : "Bagikan Seluruh Layar Lagi"}
                 </Button>
                 <p className="text-center text-[11px] text-white/35">
-                  Share layar terhenti {screenInterruptions} kali · {formatElapsed(elapsed)}
+                  {cameraOnlyMode ? "Meninggalkan halaman" : "Share layar terhenti"} {screenInterruptions} kali · {formatElapsed(elapsed)}
                 </p>
               </div>
             </div>
           )}
 
           {/* Stage: tiles + conversation; bottom padding leaves room for the floating controls */}
-          <main className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-4 pb-28 pt-2 sm:px-6 sm:pb-32">
-            <div className="grid w-full max-w-5xl grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* Mobile: tiles side by side (small) and content top-aligned so nothing is clipped when it
+              overflows; desktop: two large tiles, vertically centred. */}
+          <main className="flex flex-1 flex-col items-center justify-start gap-3 overflow-y-auto px-3 pb-28 pt-1 sm:justify-center sm:gap-4 sm:px-6 sm:pb-32 sm:pt-2">
+            <div className="grid w-full max-w-5xl grid-cols-2 gap-2 sm:gap-3">
               <div
                 className={`relative aspect-video overflow-hidden rounded-2xl bg-gradient-to-br from-[#1c1a2c] to-[#101018] ring-1 transition-shadow ${
                   isTtsPlaying ? "ring-[#FFBE00]/60 shadow-[0_0_0_6px_rgba(255,190,0,0.08)]" : "ring-white/10"
