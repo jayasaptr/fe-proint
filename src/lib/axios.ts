@@ -10,6 +10,15 @@ const api = axios.create({
 // Add a request interceptor to automatically attach the JWT token
 api.interceptors.request.use(
   (config) => {
+    // Sebagian modul memanggil api.get(`${VITE_API_URL_LOCAL}/candidates`) dengan path penuh.
+    // Saat VITE_API_URL_LOCAL relatif (mis. "/api" lewat proxy Vite HTTPS), axios akan
+    // menggabungkannya dengan baseURL menjadi "/api/api/...". Hilangkan baseURL bila url
+    // sudah diawali baseURL yang sama.
+    const base = typeof config.baseURL === 'string' ? config.baseURL : '';
+    if (base.startsWith('/') && typeof config.url === 'string' && config.url.startsWith(`${base}/`)) {
+      config.baseURL = '';
+    }
+
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
