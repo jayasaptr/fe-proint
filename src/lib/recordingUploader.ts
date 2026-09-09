@@ -25,22 +25,26 @@ export class RecordingUploader {
 
   private readonly token: string;
   private readonly sessionToken: string;
-  private readonly mimeType: string;
+  private readonly getMimeType: () => string;
   private readonly getInterruptions: () => number;
   private readonly onError?: (message: string) => void;
 
   // Explicit field assignments instead of TS parameter properties: tsconfig has
   // `erasableSyntaxOnly`, which only allows syntax that can be stripped without emit.
+  /**
+   * `mimeType` may be a getter: MediaRecorder picks the container (WebM on Chromium, MP4 on Safari)
+   * only when recording starts, after this uploader has been constructed.
+   */
   constructor(
     token: string,
     sessionToken: string,
-    mimeType: string,
+    mimeType: string | (() => string),
     getInterruptions: () => number,
     onError?: (message: string) => void,
   ) {
     this.token = token;
     this.sessionToken = sessionToken;
-    this.mimeType = mimeType;
+    this.getMimeType = typeof mimeType === "function" ? mimeType : () => mimeType;
     this.getInterruptions = getInterruptions;
     this.onError = onError;
   }
@@ -61,7 +65,7 @@ export class RecordingUploader {
       this.timer = null;
     }
     if (this.pending.length === 0 || this.broken) return;
-    const part = new Blob(this.pending, { type: this.mimeType });
+    const part = new Blob(this.pending, { type: this.getMimeType() || "video/webm" });
     this.pending = [];
     this.pendingBytes = 0;
     const seq = this.seq++;

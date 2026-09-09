@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const MIME_CANDIDATES = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+// WebM on Chromium/Firefox; MP4 is the only container Safari (iPhone/iPad) can record.
+const MIME_CANDIDATES = [
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp8,opus",
+  "video/webm",
+  "video/mp4;codecs=avc1,mp4a.40.2",
+  "video/mp4",
+];
 
 const COMPOSITE_FPS = 10; // screen content changes slowly; keeps CPU and upload size low
 const MAX_WIDTH = 1280; // cap the composite resolution (screens may be 4K)
@@ -15,6 +22,12 @@ export interface RecorderSources {
   camera: MediaStream | null;
   /** Microphone stream for the recording's audio track (separate from the STT capture). */
   audio: MediaStream | null;
+  /**
+   * false = camera-only session (phone/tablet: the browser has no screen capture). The frame shows
+   * the camera full-size with a "mobile" label instead of the red "share stopped" banner.
+   * Default true: the screen is mandatory and its absence is flagged in the video.
+   */
+  screenRequired?: boolean;
 }
 
 export interface RecorderHandlers {
@@ -33,12 +46,19 @@ const attachVideo = async (stream: MediaStream): Promise<HTMLVideoElement> => {
   return video;
 };
 
-/** Frame size for the composite: screen size capped to MAX_WIDTH, or 720p when there is no screen. */
-const frameSize = (screen: MediaStream | null) => {
-  const track = screen?.getVideoTracks()[0];
+/**
+ * Frame size for the composite: the screen size capped to MAX_WIDTH; without a screen the camera's
+ * own size (a phone held upright gives a portrait frame), else 720p.
+ */
+const frameSize = (screen: MediaStream | null, camera: MediaStream | null) => {
+  const track = (screen ?? camera)?.getVideoTracks()[0];
   const { width = 1280, height = 720 } = track?.getSettings() ?? {};
-  const scale = Math.min(1, MAX_WIDTH / width);
-  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+  const safeWidth = width > 0 ? width : 1280;
+  const safeHeight = height > 0 ? height : 720;
+  const scale = Math.min(1, MAX_WIDTH / Math.max(safeWidth, safeHeight));
+  // Even dimensions keep every encoder happy
+  const even = (n: number) => Math.max(2, Math.round((n * scale) / 2) * 2);
+  return { width: even(safeWidth), height: even(safeHeight) };
 };
 
 /** Draw `video` into a box, preserving aspect ratio (letterbox). */
@@ -59,9 +79,11 @@ export const pickRecorderMimeType = (): string =>
  * the webcam is composited as a picture-in-picture thumbnail, the microphone is the audio track.
  * Data is handed out through `onData` every second so it can be uploaded while the session runs.
  *
- * Screen sharing is mandatory for the interview. When the candidate stops sharing, the frame shows a
- * red banner ("share layar dihentikan") until `replaceScreen()` receives a new stream, and the
- * caller is notified through `onScreenEnded` so it can block the interview meanwhile.
+ * Screen sharing is mandatory on desktop. When the candidate stops sharing, the frame shows a red
+ * banner ("share layar dihentikan") until `replaceScreen()` receives a new stream, and the caller is
+ * notified through `onScreenEnded` so it can block the interview meanwhile. On phones and tablets
+ * (no screen capture API) pass `screenRequired: false`: the camera fills the frame and a "mobile"
+ * label replaces the banner.
  */
 export function useSessionRecorder() {
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -70,6 +92,8 @@ export function useSessionRecorder() {
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenLiveRef = useRef(false);
+  const screenRequiredRef = useRef(true);
+  const mimeTypeRef = useRef("");
   const handlersRef = useRef<RecorderHandlers | null>(null);
   const stopPromiseRef = useRef<Promise<void> | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -110,13 +134,28 @@ export function useSessionRecorder() {
         drawContain(ctx, cameraVideo, x, y, pipW, pipH);
       }
     } else {
-      if (cameraVideo) drawContain(ctx, cameraVideo, 0, 0, width, height);
-      // Leave a visible marker in the video while the mandatory screen share is missing
-      ctx.fillStyle = "rgba(220, 38, 38, 0.85)";
-      ctx.fillRect(0, 0, width, 36);
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 18px sans-serif";
-      ctx.fillText("Share layar dihentikan oleh kandidat", 12, 25);
+      if (cameraVideo) {
+        drawContain(ctx, cameraVideo, 0, 0, width, height);
+      } else {
+        ctx.fillStyle = "#666";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("Kamera tidak tersedia · hanya suara", 12, Math.round(height / 2));
+      }
+      if (screenRequiredRef.current) {
+        // Leave a visible marker in the video while the mandatory screen share is missing
+        ctx.fillStyle = "rgba(220, 38, 38, 0.85)";
+        ctx.fillRect(0, 0, width, 36);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillText("Share layar dihentikan oleh kandidat", 12, 25);
+      } else {
+        // Camera-only session (mobile): tell reviewers why there is no screen in this video
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, height - 32, width, 32);
+        ctx.fillStyle = "#fff";
+        ctx.font = "14px sans-serif";
+        ctx.fillText("Interview via HP · kamera & suara (tanpa share layar)", 12, height - 11);
+      }
     }
     // Timestamp overlay helps reviewers correlate the video with the transcript
     ctx.fillStyle = "rgba(0,0,0,0.6)";
@@ -129,11 +168,12 @@ export function useSessionRecorder() {
   const start = useCallback(
     async (sources: RecorderSources, handlers: RecorderHandlers): Promise<boolean> => {
       if (recorderRef.current) return true;
-      if (!sources.screen && !sources.camera) return false;
+      if (!sources.screen && !sources.camera && !sources.audio) return false;
       if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) return false;
       try {
         handlersRef.current = handlers;
-        const { width, height } = frameSize(sources.screen);
+        screenRequiredRef.current = sources.screenRequired !== false;
+        const { width, height } = frameSize(sources.screen, sources.camera);
         const canvas = document.createElement("canvas");
         canvas.width = width;
         canvas.height = height;
@@ -163,7 +203,8 @@ export function useSessionRecorder() {
           videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
           audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
         });
-        setMimeType(recorder.mimeType || type || "video/webm");
+        mimeTypeRef.current = recorder.mimeType || type || "video/webm";
+        setMimeType(mimeTypeRef.current);
         recorder.ondataavailable = (event) => {
           if (event.data.size > 0) handlersRef.current?.onData(event.data);
         };
@@ -231,5 +272,8 @@ export function useSessionRecorder() {
     };
   }, [stop]);
 
-  return { isRecording, screenLive, mimeType, start, stop, replaceScreen };
+  /** Container/codec actually chosen by MediaRecorder (readable synchronously right after `start`). */
+  const getMimeType = useCallback(() => mimeTypeRef.current || "video/webm", []);
+
+  return { isRecording, screenLive, mimeType, getMimeType, start, stop, replaceScreen };
 }
