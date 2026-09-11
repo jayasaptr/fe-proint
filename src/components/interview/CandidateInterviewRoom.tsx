@@ -2,7 +2,24 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveTranscription, type SttEngine } from "@/hooks/useLiveTranscription";
 import { useSessionRecorder } from "@/hooks/useSessionRecorder";
-import { getSttConfig, resolveSttEngine, synthesizeSpeech, warmupWhisper } from "@/lib/aiApi";
+import AiAvatar, { type AvatarState } from "@/components/interview/AiAvatar";
+import EmojiAvatar from "@/components/interview/EmojiAvatar";
+import ToonAvatar from "@/components/interview/ToonAvatar";
+import {
+  avatarIdleUrl,
+  avatarImageUrl,
+  avatarThumbUrl,
+  getAvatarConfig,
+  getSttConfig,
+  getTtsConfig,
+  resolveAvatarVariant,
+  resolveSttEngine,
+  synthesizeSpeech,
+  synthesizeSpeechVideo,
+  warmupWhisper,
+  type SpeechVideo,
+} from "@/lib/aiApi";
+import { createSpeechAnalyser, type SpeechAnalyser } from "@/lib/speechAnalyser";
 import type { InterviewHistoryItem } from "@/lib/api/interview";
 import { MIC_CONSTRAINTS } from "@/lib/pcmCapture";
 import { RecordingUploader } from "@/lib/recordingUploader";
@@ -179,8 +196,12 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const micStreamRef = useRef<MediaStream | null>(null); // raw mic capture behind the mix
   // Web Audio mixer: the microphone and every TTS playback are routed into one destination stream so
   // the recording carries both sides of the conversation, not just the candidate.
-  const audioMixRef = useRef<{ ctx: AudioContext; dest: MediaStreamAudioDestinationNode; ttsGain: GainNode } | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null); // kept alive after the mix stops; closed on unmount
+  const audioMixRef = useRef<{ dest: MediaStreamAudioDestinationNode; ttsGain: GainNode } | null>(null);
+  // TTS output graph: every AI voice playback goes element -> analyser -> speakers (and -> the
+  // recording mix while it runs). The analyser drives the avatar's lip-sync. Created from the Start
+  // click so autoplay policies let the context run; closed on unmount.
+  const ttsGraphRef = useRef<{ ctx: AudioContext; analyser: SpeechAnalyser } | null>(null);
+  const [speechAnalyser, setSpeechAnalyser] = useState<SpeechAnalyser | null>(null);
   const uploaderRef = useRef<RecordingUploader | null>(null);
   const interruptionsRef = useRef(0);
   const [screenInterruptions, setScreenInterruptions] = useState(0);
@@ -198,6 +219,51 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const { data: sttConfig } = useQuery({ queryKey: ["ai-stt-config"], queryFn: getSttConfig, staleTime: 5 * 60_000, retry: 1 });
   const sttEngine: SttEngine = resolveSttEngine(sttConfig, interview.stt_engine);
   const stt = useLiveTranscription(sttEngine);
+
+  // Avatar look follows the server's TTS voice (female Gadis / male Ardi) unless VITE_AI_AVATAR
+  // pins it or turns the avatar off.
+  const { data: ttsConfig } = useQuery({ queryKey: ["ai-tts-config"], queryFn: getTtsConfig, staleTime: 5 * 60_000, retry: 1 });
+  const avatarVariant = resolveAvatarVariant(ttsConfig);
+
+  // Photo avatar: when HR uploaded a photo and the GPU worker is up, every utterance is fetched as a
+  // lip-synced MP4 of that photo instead of an MP3. Two failed renders in a row switch the session
+  // back to MP3 + SVG avatar so a struggling worker cannot stall the interview.
+  const { data: avatarConfig } = useQuery({ queryKey: ["ai-avatar-config"], queryFn: getAvatarConfig, staleTime: 60_000, retry: 1 });
+  const [photoDisabled, setPhotoDisabled] = useState(false);
+  // The invitation may pin an avatar (HR's choice in the interview options); otherwise the global
+  // default. A pinned avatar that no longer exists falls back to the default as well.
+  const activeAvatar = (() => {
+    if (!avatarConfig?.enabled) return null;
+    const pinned = interview.avatar_id ? avatarConfig.avatars.find((a) => a.id === interview.avatar_id) : null;
+    if (pinned) {
+      const usable = pinned.engine === "toon" || pinned.engine === "emoji" || avatarConfig.worker_ready !== false;
+      if (usable) return pinned;
+    }
+    return avatarConfig.ready && avatarConfig.active ? avatarConfig.active : null;
+  })();
+  // "emoji": parametric vector character, "toon": CPU puppet; both drawn in the browser from plain TTS audio
+  const emojiAvatar = activeAvatar?.engine === "emoji" ? activeAvatar : null;
+  const toonAvatar = activeAvatar?.engine === "toon" ? activeAvatar : null;
+  // "musetalk": GPU talking head, MP4 per utterance; falls back to MP3 + SVG after repeated failures
+  const photoAvatar = activeAvatar && activeAvatar.engine !== "toon" && activeAvatar.engine !== "emoji" && !photoDisabled ? activeAvatar : null;
+  const photoAvatarRef = useRef(photoAvatar);
+  useEffect(() => {
+    photoAvatarRef.current = photoAvatar;
+  }, [photoAvatar]);
+  const videoFailuresRef = useRef(0);
+  const avatarVideoRef = useRef<HTMLVideoElement | null>(null);
+  // Video avatars: the silent source loop shown while the interviewer is quiet. Spoken clips start on
+  // the frame this loop is at and hand back to it at the frame they end on, so the motion continues.
+  const idleVideoRef = useRef<HTMLVideoElement | null>(null);
+  const videoRoutedRef = useRef(false); // createMediaElementSource may run once per element
+  const videoUrlRef = useRef<string | null>(null);
+  const currentClipRef = useRef<SpeechVideo | null>(null); // stream being played; aborted on interrupt
+  const [videoVisible, setVideoVisible] = useState(false);
+  // True only while an utterance is actually audible. `isTtsPlaying` also covers the synthesis /
+  // render wait, so the two together tell the candidate "preparing" vs "speaking".
+  const [isVoicePlaying, setIsVoicePlaying] = useState(false);
+  // Text-to-voice sync for the question panel: a part is shown dimmed until its voice starts.
+  const [voiced, setVoiced] = useState({ reaction: true, question: true });
 
   useEffect(() => {
     answerRef.current = answer;
@@ -239,11 +305,22 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     }
   }, [phase, cameraError]);
 
+  /** Silence whatever the interviewer is saying right now (MP3 element or avatar video). */
+  const stopPlayback = () => {
+    audioRef.current?.pause();
+    const video = avatarVideoRef.current;
+    if (video && !video.paused) video.pause();
+    currentClipRef.current?.abort(); // stop downloading (and rendering) a clip nobody will hear
+    currentClipRef.current = null;
+    setIsVoicePlaying(false);
+  };
+
   const interruptTts = () => {
     speechGenRef.current += 1; // skip everything still queued
-    audioRef.current?.pause();
+    stopPlayback();
     interruptedRef.current = true;
     setIsTtsPlaying(false);
+    setVideoVisible(false);
   };
 
   // Speech activity from transcripts: refresh timer + barge-in while the AI is talking
@@ -275,8 +352,10 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   useEffect(
     () => () => {
       stopMedia();
-      void audioCtxRef.current?.close().catch(() => {});
-      audioCtxRef.current = null;
+      void ttsGraphRef.current?.ctx.close().catch(() => {});
+      ttsGraphRef.current = null;
+      if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
+      videoUrlRef.current = null;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -301,12 +380,14 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
    */
   const startRecordingAudio = async () => {
     try {
-      const ctx = new AudioContext();
+      const graph = ensureTtsGraph();
+      if (!graph) throw new Error("Web Audio unavailable");
+      const { ctx } = graph;
       const dest = ctx.createMediaStreamDestination();
       const ttsGain = ctx.createGain();
       ttsGain.gain.value = 0.9; // the synthetic voice is denser than room speech; keep it a touch under the mic
       ttsGain.connect(dest);
-      audioMixRef.current = { ctx, dest, ttsGain };
+      audioMixRef.current = { dest, ttsGain };
       try {
         const mic = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
         micStreamRef.current = mic;
@@ -322,33 +403,60 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     }
   };
 
-  /** Route a TTS playback element into the recording mix while keeping it audible on the speakers. */
-  const attachTtsToRecording = (audio: HTMLAudioElement) => {
-    const mix = audioMixRef.current;
-    if (!mix) return;
+  /**
+   * AudioContext + analyser shared by the avatar lip-sync and the recording mix. Call it from a user
+   * gesture (Start / mic button) so the context is allowed to run. Returns null where Web Audio is
+   * missing; playback then bypasses the graph and the avatar simply does not move its mouth.
+   */
+  const ensureTtsGraph = () => {
+    if (ttsGraphRef.current) return ttsGraphRef.current;
+    if (typeof AudioContext === "undefined") return null;
     try {
-      const source = mix.ctx.createMediaElementSource(audio); // from here on the element only plays through the graph
-      source.connect(mix.ctx.destination);
-      source.connect(mix.ttsGain);
-      void mix.ctx.resume().catch(() => {});
+      const ctx = new AudioContext();
+      const analyser = createSpeechAnalyser(ctx);
+      analyser.node.connect(ctx.destination);
+      ttsGraphRef.current = { ctx, analyser };
+      setSpeechAnalyser(analyser);
+      void ctx.resume().catch(() => {});
+      return ttsGraphRef.current;
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * Route a TTS playback element through the analyser (avatar) to the speakers, and into the
+   * recording mix while it runs. Must resolve before `play()`: once `createMediaElementSource` is
+   * called the element is only audible through the graph, so a context that refuses to run
+   * (autoplay policy, iOS "interrupted") means the element is left alone and plays directly.
+   */
+  const routeTtsPlayback = async (audio: HTMLAudioElement) => {
+    const graph = ensureTtsGraph();
+    if (!graph) return;
+    if (graph.ctx.state !== "running") await graph.ctx.resume().catch(() => {});
+    if (graph.ctx.state !== "running") return;
+    try {
+      const source = graph.ctx.createMediaElementSource(audio);
+      source.connect(graph.analyser.node);
+      const mix = audioMixRef.current;
+      if (mix) source.connect(mix.ttsGain);
     } catch {
       /* element already attached or context closed: it still plays through the speakers */
     }
   };
 
   /**
-   * Stop feeding the recording. The AudioContext itself is left open: TTS elements already routed
+   * Stop feeding the recording. The AudioContext itself stays open: TTS elements already routed
    * through it (e.g. the closing statement, which plays while the recording is being finalised)
-   * would go silent if the context were closed. It is closed on unmount.
+   * would go silent if it were closed, and the avatar keeps lip-syncing. It is closed on unmount.
    */
   const stopRecordingAudio = () => {
     micStreamRef.current?.getTracks().forEach((track) => track.stop());
     micStreamRef.current = null;
     recordingAudioRef.current?.getTracks().forEach((track) => track.stop());
     recordingAudioRef.current = null;
-    const mix = audioMixRef.current;
-    audioMixRef.current = null; // later playbacks are no longer attached and play directly
-    if (mix) audioCtxRef.current = mix.ctx;
+    audioMixRef.current?.ttsGain.disconnect();
+    audioMixRef.current = null; // later playbacks only go to the speakers (and the avatar)
   };
 
   const handleScreenEnded = () => {
@@ -529,42 +637,228 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     answerPrefixRef.current = "";
   };
 
+  /** One synthesized utterance: MP3 for the SVG avatar, streamed MP4 (photo/video talking head) for the photo avatar. */
+  type SpeechMedia = { kind: "audio"; blob: Blob } | { kind: "video"; video: SpeechVideo };
+
+  /** Cycle frame the idle loop is showing right now (0 for photo avatars or before the loop plays). */
+  const currentIdleFrame = (): number => {
+    const idle = idleVideoRef.current;
+    const avatar = photoAvatarRef.current;
+    if (!idle || !avatar || avatar.kind !== "video") return 0;
+    const fps = avatar.fps || 25;
+    const cycle = avatar.cycle_frames || 1;
+    // The clip is requested now but plays after whatever is still queued; the fade hides the rest.
+    return Math.floor(idle.currentTime * fps) % cycle;
+  };
+
+  /**
+   * Synthesize one utterance. Photo mode asks for the lip-synced video and falls back to plain TTS
+   * when the render fails; after two failures the rest of the session stays on MP3 + SVG avatar.
+   */
+  const synthesize = async (text: string): Promise<SpeechMedia | null> => {
+    if (photoAvatarRef.current) {
+      try {
+        const video = await synthesizeSpeechVideo(text, currentIdleFrame(), photoAvatarRef.current.id);
+        return { kind: "video", video };
+      } catch {
+        videoFailuresRef.current += 1;
+        if (videoFailuresRef.current >= 2) setPhotoDisabled(true);
+      }
+    }
+    try {
+      return { kind: "audio", blob: await synthesizeSpeech(text) };
+    } catch {
+      return null; // TTS is best-effort: the text is always shown on screen
+    }
+  };
+
+  /** Route the persistent avatar <video> through the analyser + recording mix, once. */
+  const routeVideoPlayback = async (video: HTMLVideoElement) => {
+    if (videoRoutedRef.current) return;
+    const graph = ensureTtsGraph();
+    if (!graph) return;
+    if (graph.ctx.state !== "running") await graph.ctx.resume().catch(() => {});
+    if (graph.ctx.state !== "running") return;
+    try {
+      const source = graph.ctx.createMediaElementSource(video);
+      source.connect(graph.analyser.node);
+      const mix = audioMixRef.current;
+      if (mix) source.connect(mix.ttsGain);
+      videoRoutedRef.current = true;
+    } catch {
+      /* already attached or context closed: the element still plays through the speakers */
+    }
+  };
+
+  /**
+   * Play a talking-head clip in the AI tile. The <video> element is reused for every clip (only
+   * one element can be attached to the audio graph); when the tile is not mounted yet the clip's
+   * audio track still plays through a detached element so nothing is lost.
+   */
+  /** Progressive playback is possible when the browser has MediaSource for the worker's codec string. */
+  const canStreamVideo = (mime: string) =>
+    typeof MediaSource !== "undefined" && typeof MediaSource.isTypeSupported === "function" && MediaSource.isTypeSupported(mime);
+
+  /** Wait until the SourceBuffer accepts the next append. */
+  const whenIdle = (sb: SourceBuffer) =>
+    sb.updating ? new Promise<void>((r) => sb.addEventListener("updateend", () => r(), { once: true })) : Promise.resolve();
+
+  /**
+   * Feed the fragmented MP4 into a MediaSource as it arrives. Playback starts on the first fragment
+   * (about half a second into the render) instead of after the whole clip. Rendering is ~5x faster
+   * than real time, so the buffer never runs dry. Resolves when the stream is fully appended.
+   */
+  const pumpStream = async (video: HTMLVideoElement, meta: SpeechVideo, onFirstData: () => void) => {
+    const ms = new MediaSource();
+    const url = URL.createObjectURL(ms);
+    videoUrlRef.current = url;
+    video.src = url;
+    await new Promise<void>((r) => ms.addEventListener("sourceopen", () => r(), { once: true }));
+    const sb = ms.addSourceBuffer(meta.mime);
+    const reader = meta.body.getReader();
+    let first = true;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (ms.readyState !== "open") break; // interrupted: src was replaced
+        await whenIdle(sb);
+        // Copy into a plain ArrayBuffer: appendBuffer refuses views over a SharedArrayBuffer type-wise
+        const copy = new Uint8Array(value.byteLength);
+        copy.set(value);
+        sb.appendBuffer(copy.buffer);
+        if (first) {
+          first = false;
+          onFirstData();
+        }
+      }
+      if (ms.readyState === "open") {
+        await whenIdle(sb);
+        ms.endOfStream();
+      }
+    } catch {
+      // Aborted download or closed MediaSource: whatever was buffered plays out, `ended` still fires
+      try {
+        if (ms.readyState === "open") ms.endOfStream();
+      } catch {
+        /* already closed */
+      }
+    } finally {
+      reader.cancel().catch(() => {});
+    }
+  };
+
+  const playVideo = async (meta: SpeechVideo) => {
+    const video = avatarVideoRef.current;
+    if (!video) {
+      await playBlob(await new Response(meta.body).blob()); // tile not mounted: audio track only
+      return;
+    }
+    stopPlayback();
+    currentClipRef.current = meta;
+    if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
+    await routeVideoPlayback(video);
+    // Freeze the idle loop while the clip is on top: the clip continues the loop's motion
+    const idle = idleVideoRef.current;
+    idle?.pause();
+    setVideoVisible(true);
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        setIsVoicePlaying(false);
+        resolve();
+      };
+      video.onended = done;
+      video.onpause = done;
+      video.onerror = done;
+      video.onplaying = () => setIsVoicePlaying(true);
+      const start = () => video.play().catch(done);
+      if (canStreamVideo(meta.mime)) {
+        // ended fires after endOfStream() once playback reaches the last fragment
+        void pumpStream(video, meta, start);
+      } else {
+        // No MediaSource (older iOS Safari): wait for the whole clip, then play it as a blob
+        void new Response(meta.body)
+          .blob()
+          .then((blob) => {
+            if (currentClipRef.current !== meta) return done(); // interrupted meanwhile
+            const url = URL.createObjectURL(blob);
+            videoUrlRef.current = url;
+            video.src = url;
+            start();
+          })
+          .catch(done);
+      }
+    });
+    if (currentClipRef.current === meta) currentClipRef.current = null;
+    // Hand back to the idle loop on the frame the clip ended on, so the next second of motion is
+    // the one the source video really has there (no jump on the fade back).
+    if (idle && meta.cycleFrames > 1) {
+      const fps = photoAvatarRef.current?.fps || 25;
+      try {
+        idle.currentTime = (meta.endFrame % meta.cycleFrames) / fps;
+      } catch {
+        /* metadata not loaded yet: the loop just continues from where it was */
+      }
+      void idle.play().catch(() => {});
+    }
+  };
+
+  const playMedia = (media: SpeechMedia) => (media.kind === "video" ? playVideo(media.video) : playBlob(media.blob));
+
   // Plays one audio blob; resolves when it ends, is paused (interrupted) or fails.
-  const playBlob = (blob: Blob) =>
-    new Promise<void>((resolve) => {
-      const url = URL.createObjectURL(blob);
-      audioRef.current?.pause();
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      attachTtsToRecording(audio); // AI voice goes into the session recording as well as the speakers
+  const playBlob = async (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    stopPlayback();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    // AI voice goes through the analyser (avatar lip-sync) and into the session recording
+    await routeTtsPlayback(audio);
+    if (audioRef.current !== audio) {
+      URL.revokeObjectURL(url); // interrupted while the context was resuming
+      return;
+    }
+    await new Promise<void>((resolve) => {
       const done = () => {
         URL.revokeObjectURL(url);
+        setIsVoicePlaying(false);
         resolve();
       };
       audio.onended = done;
       audio.onpause = done;
       audio.onerror = done;
+      audio.onplaying = () => setIsVoicePlaying(true);
       audio.play().catch(done);
     });
+  };
 
   /**
    * Add one utterance to the speech queue. Synthesis starts immediately; playback waits for the
    * items queued before it. Resolves when this item has finished playing (or was skipped).
    */
-  const enqueueSpeech = (source: string | Blob): Promise<void> => {
+  const enqueueSpeech = (source: string | Blob, options: { onStart?: () => void } = {}): Promise<void> => {
     const gen = speechGenRef.current;
-    const blobPromise: Promise<Blob | null> =
-      source instanceof Blob ? Promise.resolve(source) : synthesizeSpeech(source).catch(() => null);
+    const mediaPromise: Promise<SpeechMedia | null> =
+      source instanceof Blob ? Promise.resolve({ kind: "audio", blob: source }) : synthesize(source);
     speechPendingRef.current += 1;
     interruptedRef.current = false;
     setIsTtsPlaying(true);
     const run = speechChainRef.current
       .then(async () => {
-        if (gen !== speechGenRef.current) return; // interrupted while waiting in the queue
-        const blob = await blobPromise;
-        if (!blob || gen !== speechGenRef.current) return;
+        const media = await mediaPromise;
+        if (gen !== speechGenRef.current) {
+          // Interrupted while waiting in the queue: never play, stop any download still running
+          if (media?.kind === "video") media.video.abort();
+          options.onStart?.();
+          return;
+        }
+        // Text may show as spoken now: either the voice starts, or there is no voice to wait for
+        options.onStart?.();
+        if (!media) return;
         playbackStartedAtRef.current = Date.now();
-        await playBlob(blob);
+        await playMedia(media);
       })
       .catch(() => {
         /* TTS is best-effort: the text is always shown on screen */
@@ -573,6 +867,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
         speechPendingRef.current -= 1;
         if (speechPendingRef.current === 0) {
           setIsTtsPlaying(false);
+          setVideoVisible(false); // back to the still photo between turns
           // Drop speaker echo picked up by an open mic, but never a real answer
           if (!interruptedRef.current && countWords(answerRef.current) < BARGE_IN_MIN_WORDS) {
             stt.reset();
@@ -611,6 +906,8 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     answerPrefixRef.current = "";
     const reaction = stripSpeechTags(data.reaction);
     const questionText = stripSpeechTags(data.question);
+    // Non-streaming path (or parts the stream did not voice): nothing to sync with, show as-is
+    setVoiced((v) => ({ reaction: alreadySpoken.reaction ? v.reaction : true, question: alreadySpoken.question ? v.question : true }));
     setQuestion({ ...data, reaction, question: questionText, speech: [data.reaction ?? "", data.question ?? ""] });
     setPhase("interviewing");
     lastActivityRef.current = Date.now();
@@ -637,7 +934,9 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
             const clean = stripSpeechTags(text);
             if (!clean) return;
             spoken.reaction = true;
-            void enqueueSpeech(text);
+            // Text appears at once (dimmed) and lights up the moment its voice starts
+            setVoiced({ reaction: false, question: false });
+            void enqueueSpeech(text, { onStart: () => setVoiced((v) => ({ ...v, reaction: true })) });
             // Show the reaction right away; the question fills in when it arrives
             setQuestion({ finished: false, number: estimatedNumber, reaction: clean, question: "", speech: [text] });
             setPhase("interviewing");
@@ -646,7 +945,8 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
             const clean = stripSpeechTags(text);
             if (!clean) return;
             spoken.question = true;
-            void enqueueSpeech(text);
+            if (!spoken.reaction) setVoiced({ reaction: true, question: false });
+            void enqueueSpeech(text, { onStart: () => setVoiced((v) => ({ ...v, question: true })) });
             setQuestion((prev) => ({
               ...(prev ?? { finished: false, number: estimatedNumber, reaction: "", speech: [] }),
               question: clean,
@@ -682,7 +982,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     if (submittingRef.current) return;
     submittingRef.current = true;
     try {
-      audioRef.current?.pause();
+      stopPlayback();
       setIsTtsPlaying(false);
       if (stt.isRecording) await stt.stop();
       const candidateQuestion = answerRef.current.trim();
@@ -756,7 +1056,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
 
   const doClosing = async (finalHistory: InterviewHistoryItem[], finalQa: InterviewHistoryItem[]) => {
     if (stt.isRecording) await stt.stop();
-    audioRef.current?.pause();
+    stopPlayback();
     setIsTtsPlaying(false);
     setPhase("closing");
     setError(null);
@@ -779,6 +1079,9 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     clarifyingRef.current = false;
     clarifyCountRef.current = 0;
     setIsStartingMedia(true);
+    // Web Audio for the avatar lip-sync and the recording mix, created inside the click so autoplay
+    // policies (Chrome, iOS Safari) let it run without further gestures.
+    ensureTtsGraph();
     try {
       // Screen share first, straight from the click: getDisplayMedia needs a fresh user gesture and
       // the desktop interview cannot start without it. Skipped in camera mode (phone/tablet).
@@ -812,7 +1115,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     if (submittingRef.current || !question) return;
     submittingRef.current = true;
     try {
-      audioRef.current?.pause();
+      stopPlayback();
       setIsTtsPlaying(false);
       if (stt.isRecording) await stt.stop();
       const finalAnswer = answerRef.current.trim();
@@ -834,7 +1137,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   /** Candidate ends early: whatever was answered is submitted for assessment. */
   const endSession = async () => {
     if (!window.confirm("Akhiri interview sekarang? Jawaban yang sudah diberikan akan dikirim ke tim HR.")) return;
-    audioRef.current?.pause();
+    stopPlayback();
     setIsTtsPlaying(false);
     if (stt.isRecording) await stt.stop();
     const pending = phase === "interviewing" ? answerRef.current.trim() : "";
@@ -864,7 +1167,9 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     : isReviewing
       ? "Periksa transkrip jawaban Anda. Perbaiki teksnya, bicara lagi, atau kirim."
       : isTtsPlaying
-      ? "AI sedang membacakan pertanyaan. Nyalakan mic dan bicara untuk menyela."
+      ? isVoicePlaying
+        ? "AI sedang membacakan pertanyaan. Nyalakan mic dan bicara untuk menyela."
+        : "Menyiapkan suara interviewer…"
       : micOn
         ? isSpeaking
           ? "Suara terdeteksi, silakan lanjutkan…"
@@ -876,6 +1181,10 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
             : "Tekan tombol mic di bawah untuk mulai menjawab.";
 
   const roomActive = ["interviewing", "qa", "closing", "saving"].includes(phase);
+
+  // What the avatar does: talking beats thinking (a reaction can be spoken while the question is
+  // still generating), then listening while the mic is open, else idle.
+  const avatarState: AvatarState = isTtsPlaying ? "speaking" : isThinking ? "thinking" : micOn ? "listening" : "idle";
 
   /** Transcript box: live preview while listening, editable review step once the mic pauses. */
   const transcriptPanel = isReviewing ? (
@@ -953,9 +1262,26 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   if (phase === "ready") {
     return (
       <div className="w-full rounded-2xl bg-white dark:bg-slate-900 p-5 sm:p-8 space-y-5 sm:border sm:border-slate-200/80 sm:dark:border-slate-800 sm:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-16px_rgba(15,23,42,0.18)]">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Interview {interview.position}</h2>
-          <p className="text-sm text-slate-500">Wawancara suara dengan AI interviewer PT Darma Henwa.</p>
+        <div className="flex items-center gap-4">
+          {emojiAvatar ? (
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-[#1c1a2c] to-[#101018] ring-2 ring-[#FFBE00]/40">
+              <EmojiAvatar params={emojiAvatar.params} state="idle" className="h-full w-full [&>svg]:scale-[1.35] [&>svg]:translate-y-[12%]" />
+            </div>
+          ) : activeAvatar && (toonAvatar || photoAvatar) ? (
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full bg-slate-900 ring-2 ring-[#FFBE00]/40">
+              <img src={avatarThumbUrl(activeAvatar)} alt="AI interviewer" className="h-full w-full object-cover" />
+            </div>
+          ) : (
+            avatarVariant && (
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-[#1c1a2c] to-[#101018] ring-2 ring-[#FFBE00]/40">
+                <AiAvatar state="idle" variant={avatarVariant} className="h-full w-full [&>svg]:scale-[1.35] [&>svg]:translate-y-[12%]" />
+              </div>
+            )
+          )}
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Interview {interview.position}</h2>
+            <p className="text-sm text-slate-500">Wawancara suara dengan AI interviewer PT Darma Henwa.</p>
+          </div>
         </div>
         {error && (
           <div className="flex gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
@@ -1122,16 +1448,92 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
                   isTtsPlaying ? "ring-[#FFBE00]/60 shadow-[0_0_0_6px_rgba(255,190,0,0.08)]" : "ring-white/10"
                 }`}
               >
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="relative flex h-24 w-24 items-center justify-center">
-                    {isTtsPlaying && <span className="absolute inset-0 animate-ping rounded-full bg-[#FFBE00]/15" />}
-                    <span className="absolute inset-2 rounded-full bg-[#FFBE00]/10" />
-                    <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#FFBE00]">
-                      <Bot className="h-7 w-7 text-slate-900" />
-                    </span>
+                {emojiAvatar ? (
+                  <EmojiAvatar
+                    params={emojiAvatar.params}
+                    state={avatarState}
+                    analyser={speechAnalyser}
+                    attentive={isSpeaking}
+                    className="absolute inset-0 flex items-end justify-center overflow-hidden pt-2"
+                  />
+                ) : toonAvatar ? (
+                  <ToonAvatar
+                    avatarId={toonAvatar.id}
+                    state={avatarState}
+                    analyser={speechAnalyser}
+                    attentive={isSpeaking}
+                    className="absolute inset-0 overflow-hidden"
+                  />
+                ) : photoAvatar ? (
+                  <div className="absolute inset-0 overflow-hidden">
+                    {/* Blurred copy fills the 16:9 tile; the photo itself is letterboxed on top */}
+                    <img src={avatarImageUrl(photoAvatar.id)} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-xl" />
+                    {/* Photo avatars breathe (slow zoom); video avatars already move, so no zoom there */}
+                    <div className={`absolute inset-0 ${photoAvatar.kind === "video" ? "" : "avatar-breathe"}`}>
+                      {photoAvatar.kind === "video" && photoAvatar.has_idle ? (
+                        <video
+                          ref={idleVideoRef}
+                          src={avatarIdleUrl(photoAvatar.id)}
+                          poster={avatarImageUrl(photoAvatar.id)}
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          preload="auto"
+                          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${videoVisible ? "opacity-0" : "opacity-100"}`}
+                        />
+                      ) : (
+                        <img
+                          src={avatarImageUrl(photoAvatar.id)}
+                          alt="AI interviewer"
+                          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-300 ${videoVisible ? "opacity-0" : "opacity-100"}`}
+                        />
+                      )}
+                      <video
+                        ref={avatarVideoRef}
+                        playsInline
+                        preload="auto"
+                        className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-200 ${videoVisible ? "opacity-100" : "opacity-0"}`}
+                      />
+                    </div>
+                    {avatarState === "thinking" && (
+                      <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1.5 shadow-md" aria-label="Menyusun pertanyaan">
+                        {[0, 1, 2].map((i) => (
+                          <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-700" style={{ animationDelay: `${i * 0.15}s`, animationDuration: "1s" }} />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-                <TileLabel>AI Interviewer{isTtsPlaying ? " · berbicara" : isThinking ? " · menyusun pertanyaan" : ""}</TileLabel>
+                ) : avatarVariant ? (
+                  <AiAvatar
+                    state={avatarState}
+                    analyser={speechAnalyser}
+                    variant={avatarVariant}
+                    attentive={isSpeaking}
+                    className="absolute inset-0 flex items-end justify-center overflow-hidden pt-2"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="relative flex h-24 w-24 items-center justify-center">
+                      {isTtsPlaying && <span className="absolute inset-0 animate-ping rounded-full bg-[#FFBE00]/15" />}
+                      <span className="absolute inset-2 rounded-full bg-[#FFBE00]/10" />
+                      <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#FFBE00]">
+                        <Bot className="h-7 w-7 text-slate-900" />
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/50 to-transparent" />
+                <TileLabel>
+                  AI Interviewer
+                  {avatarState === "speaking"
+                    ? " · berbicara"
+                    : avatarState === "thinking"
+                      ? " · menyusun pertanyaan"
+                      : avatarState === "listening"
+                        ? " · mendengarkan"
+                        : ""}
+                </TileLabel>
               </div>
 
               <div
@@ -1210,9 +1612,21 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
               {phase === "interviewing" && question && (
                 <>
                   <div className={PANEL_CLASS}>
-                    {question.reaction && <p className="mb-1.5 text-sm leading-relaxed text-white/50">{question.reaction}</p>}
+                    {/* Parts fade in with their voice: dimmed = written by the model, not yet spoken */}
+                    {question.reaction && (
+                      <p className={`mb-1.5 text-sm leading-relaxed transition-colors duration-300 ${voiced.reaction ? "text-white/50" : "text-white/25"}`}>
+                        {question.reaction}
+                      </p>
+                    )}
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-[15px] font-medium leading-relaxed sm:text-base">{question.question}</p>
+                      <p className={`text-[15px] font-medium leading-relaxed transition-colors duration-300 sm:text-base ${voiced.question || !question.question ? "" : "text-white/35"}`}>
+                        {question.question}
+                        {question.question && !voiced.question && (
+                          <span className="ml-2 inline-flex items-center gap-1 align-middle text-[11px] font-normal text-[#FFBE00]/80">
+                            <Loader2 className="h-3 w-3 animate-spin" /> menyiapkan suara
+                          </span>
+                        )}
+                      </p>
                       <button
                         type="button"
                         onClick={() => void speak(question.speech)}

@@ -10,6 +10,7 @@ const CandidatesPage = lazy(() => import('./pages/admin/CandidatesPage'));
 const DashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
 const JobsPage = lazy(() => import('./pages/admin/JobsPage'));
 const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
+const AvatarConfigurationPage = lazy(() => import('./pages/admin/AvatarConfigurationPage'));
 const CareerPage = lazy(() => import('./pages/CareerPage'));
 const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -36,6 +37,7 @@ const App = () => {
 
           <Route path="applications/:id" element={<ApplicationDetailPage />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="avatar" element={<AvatarConfigurationPage />} />
           <Route path="settings" element={<div className="p-8 text-2xl font-bold text-slate-800">System Settings Placeholder</div>} />
         </Route>
       </Routes>

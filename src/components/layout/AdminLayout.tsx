@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  SmilePlus,
   Sun,
   UserCircle,
   Users,
@@ -36,7 +37,11 @@ const sidebarGroups = [
   },
   {
     title: "SYSTEM",
-    links: [{ name: "Users", href: "/admin/users", icon: Users }],
+    links: [
+      { name: "Users", href: "/admin/users", icon: Users },
+      // Avatar AI interviewer: foto/video HR -> avatar (kartun, emoji, realistis) yang dipilih per undangan
+      { name: "Avatar Configuration", href: "/admin/avatar", icon: SmilePlus },
+    ],
   },
 ];
 

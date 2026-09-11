@@ -41,6 +41,8 @@ export interface InterviewSessionConfig {
   total_questions: number;
   /** Engine speech-to-text yang dipilih HR untuk undangan ini; null = default server AI. */
   stt_engine?: string | null;
+  /** Avatar interviewer pilihan HR untuk undangan ini; null = avatar aktif global di server AI. */
+  avatar_id?: string | null;
   /** true (default) = share layar wajib dan sesi direkam (layar + kamera + suara) ke DH Asset. */
   recording_required?: boolean;
   status: InvitationStatus;
