@@ -39,6 +39,7 @@ import {
   type CandidateFilters,
   type UpdateCandidateResponse,
 } from "@/lib/api/candidates";
+import { getMaritalStatuses } from "@/lib/api/masters";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -275,6 +276,23 @@ const CandidateDetailPage: React.FC = () => {
   }, [error]);
 
   const candidate = data?.success ? data.data : null;
+
+  // Master status pernikahan (SQL Server via API publik) untuk menerjemahkan
+  // CanMaritalStId ke label. Query key sama dengan CandidateEditModal agar cache
+  // dipakai bersama. Bila master gagal dimuat, fallback ke ID mentah.
+  const { data: maritalStatuses = [] } = useQuery({
+    queryKey: ["master", "maritalstatuses"],
+    queryFn: () => getMaritalStatuses(),
+    staleTime: 30 * 60 * 1000,
+  });
+  const maritalStatusLabel = useMemo(() => {
+    const rawId = candidate?.CanMaritalStId;
+    if (rawId === null || rawId === undefined || rawId === "") return null;
+    const match = maritalStatuses.find(
+      (item) => String(item.MaritalStId) === String(rawId),
+    );
+    return match?.MaritalSt || String(rawId);
+  }, [candidate?.CanMaritalStId, maritalStatuses]);
 
   // Tujuan tombol Back: list asal (dikirim lewat location.state.from oleh CandidatesPage);
   // bila dibuka langsung lewat URL, kandidat FTAP kembali ke list FTAP, lainnya ke list umum.
@@ -1063,7 +1081,7 @@ const CandidateDetailPage: React.FC = () => {
                 />
                 <InfoRow
                   label="Marital Status"
-                  value={candidate.CanMaritalStId?.toString()}
+                  value={maritalStatusLabel}
                 />
                 <InfoRow label="Blood Type" value={candidate.CanBloodType} />
                 <InfoRow
