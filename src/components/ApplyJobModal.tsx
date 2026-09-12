@@ -842,8 +842,10 @@ export const ApplyJobModal = ({
   // Add/Remove Helpers
   const addIdentity = () =>
     setIdentities([...identities, { card_type_id: "", number: "" }]);
-  const removeIdentity = (index: number) =>
+  const removeIdentity = (index: number) => {
+    if (index === lockedKtpIndex) return;
     setIdentities(identities.filter((_, i) => i !== index));
+  };
 
   const addEducation = () => {
     const newEducations = educations.map((e) => ({
@@ -887,17 +889,68 @@ export const ApplyJobModal = ({
     setDocuments(documents.filter((_, i) => i !== index));
   };
 
-  // Nomor KTP dari baris identitas berjenis KTP (PMCardType 1 / nama tipe "KTP"); hanya digit.
-  const getKtpIdentityNumber = (): string => {
-    const ktpTypeIds = new Set(
+  // ID tipe kartu KTP di master PMCardType (1 = KTP; fallback cocokkan nama "KTP").
+  const ktpTypeIds = React.useMemo(() => {
+    const ids = new Set(
       cardTypes
         .filter((t) => t.CardTypeId === 1 || /ktp/i.test(t.CardType || ""))
         .map((t) => String(t.CardTypeId)),
     );
-    if (ktpTypeIds.size === 0) ktpTypeIds.add("1");
-    const ktp = identities.find((i) => ktpTypeIds.has(String(i.card_type_id)));
+    if (ids.size === 0) ids.add("1");
+    return ids;
+  }, [cardTypes]);
+  const primaryKtpTypeId = React.useMemo(
+    () => (ktpTypeIds.has("1") ? "1" : Array.from(ktpTypeIds)[0]),
+    [ktpTypeIds],
+  );
+  const isKtpIdentity = (identity: { card_type_id: string }) =>
+    ktpTypeIds.has(String(identity.card_type_id));
+
+  // Nomor KTP dari baris identitas berjenis KTP; hanya digit.
+  const getKtpIdentityNumber = (): string => {
+    const ktp = identities.find(isKtpIdentity);
     return (ktp?.number || "").replace(/\D+/g, "");
   };
+
+  // FTAP: KTP wajib dan SELALU menjadi baris nomor 1 (index 0). Baris itu
+  // dikunci: jenisnya tidak bisa diganti dan tidak bisa dihapus. Baris
+  // identitas lain tetap bebas ditambah/dihapus di bawahnya.
+  const lockedKtpIndex = isFtapPosition ? 0 : -1;
+
+  React.useEffect(() => {
+    // Tunggu master tipe kartu termuat supaya Select bisa menampilkan label
+    // "KTP" (Radix Select tidak menampilkan nilai yang item-nya belum ada).
+    if (!isFtapPosition || isLoadingCardTypes || cardTypes.length === 0) return;
+
+    const ktpIndex = identities.findIndex(isKtpIdentity);
+    if (ktpIndex === 0) return;
+
+    setIdentities((prev) => {
+      const next = [...prev];
+      const existingIndex = next.findIndex(isKtpIdentity);
+
+      // Sudah ada baris KTP tapi bukan di posisi pertama: pindahkan ke atas.
+      if (existingIndex > 0) {
+        const [ktpRow] = next.splice(existingIndex, 1);
+        return [ktpRow, ...next];
+      }
+
+      // Belum ada baris KTP: pakai baris pertama bila jenisnya masih kosong,
+      // selain itu sisipkan baris KTP baru di paling atas.
+      if (next.length > 0 && !next[0].card_type_id) {
+        next[0] = { ...next[0], card_type_id: primaryKtpTypeId };
+        return next;
+      }
+      return [{ card_type_id: primaryKtpTypeId, number: "" }, ...next];
+    });
+  }, [
+    isFtapPosition,
+    isLoadingCardTypes,
+    cardTypes.length,
+    identities,
+    primaryKtpTypeId,
+    ktpTypeIds,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2036,64 +2089,90 @@ export const ApplyJobModal = ({
                     Lowongan FTAP wajib menyertakan identitas berjenis KTP (NIK 16 digit).
                   </p>
                 )}
-                {identities.map((identity, index) => (
-                  <div
-                    key={index}
-                    className="flex flex-col md:flex-row gap-4 items-start bg-slate-50 p-4 rounded-xl border border-slate-100 relative pr-12"
-                  >
-                    <div className="flex-1 space-y-2 w-full">
-                      <Label>Jenis Identitas*</Label>
-                      <Select
-                        value={identity.card_type_id}
-                        onValueChange={(v) => {
-                          const newArr = [...identities];
-                          newArr[index].card_type_id = v;
-                          setIdentities(newArr);
-                        }}
-                        disabled={isLoadingCardTypes}
-                      >
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={
-                              isLoadingCardTypes ? "Memuat..." : "Pilih Jenis"
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent className="z-[150]">
-                          {cardTypes.map((type) => (
-                            <SelectItem
-                              key={type.CardTypeId}
-                              value={type.CardTypeId.toString()}
-                            >
-                              {type.CardType}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex-[2] space-y-2 w-full">
-                      <Label>Nomor Identitas*</Label>
-                      <Input
-                        value={identity.number}
-                        onChange={(e) => {
-                          const newArr = [...identities];
-                          newArr[index].number = e.target.value;
-                          setIdentities(newArr);
-                        }}
-                        placeholder="Nomor..."
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50 absolute top-4 right-2"
-                      onClick={() => removeIdentity(index)}
+                {identities.map((identity, index) => {
+                  const isLockedKtp = index === lockedKtpIndex;
+                  return (
+                    <div
+                      key={index}
+                      className="flex flex-col md:flex-row gap-4 items-start bg-slate-50 p-4 rounded-xl border border-slate-100 relative pr-12"
                     >
-                      <Trash2 className="w-5 h-5" />
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex-1 space-y-2 w-full">
+                        <Label>
+                          Jenis Identitas*
+                        </Label>
+                        <Select
+                          value={identity.card_type_id}
+                          onValueChange={(v) => {
+                            const newArr = [...identities];
+                            newArr[index].card_type_id = v;
+                            setIdentities(newArr);
+                          }}
+                          disabled={isLoadingCardTypes || isLockedKtp}
+                        >
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                isLoadingCardTypes ? "Memuat..." : "Pilih Jenis"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent className="z-[150]">
+                            {cardTypes.map((type) => (
+                              <SelectItem
+                                key={type.CardTypeId}
+                                value={type.CardTypeId.toString()}
+                              >
+                                {type.CardType}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-[2] space-y-2 w-full">
+                        <Label>
+                          {isLockedKtp
+                            ? "Nomor KTP (NIK 16 digit)*"
+                            : "Nomor Identitas*"}
+                        </Label>
+                        <Input
+                          value={identity.number}
+                          onChange={(e) => {
+                            const newArr = [...identities];
+                            newArr[index].number = isLockedKtp
+                              ? e.target.value.replace(/\D+/g, "").slice(0, 16)
+                              : e.target.value;
+                            setIdentities(newArr);
+                          }}
+                          inputMode={isLockedKtp ? "numeric" : undefined}
+                          maxLength={isLockedKtp ? 16 : undefined}
+                          placeholder={
+                            isLockedKtp ? "16 digit angka" : "Nomor..."
+                          }
+                          required={isLockedKtp}
+                        />
+                        {isLockedKtp &&
+                          identity.number.length > 0 &&
+                          identity.number.length < 16 && (
+                            <p className="text-xs text-red-600">
+                              Nomor KTP harus 16 digit ({identity.number.length}
+                              /16).
+                            </p>
+                          )}
+                      </div>
+                      {!isLockedKtp && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 absolute top-4 right-2"
+                          onClick={() => removeIdentity(index)}
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* 4. Formal Education */}
