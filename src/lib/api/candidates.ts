@@ -302,6 +302,45 @@ export interface CandidatePhoto {
   can_photo_base64?: string | null;
 }
 
+/** Data tambahan kandidat program FTAP (tbl_t_candidate_ftap). */
+export interface CandidateFtap {
+  id: number;
+  candidate_id: number;
+  vacant_pos_id?: number | null;
+  department?: string | null;
+  whatsapp_number?: string | null;
+  toefl_type?: string | null; // ITP | iBT | IELTS
+  toefl_score?: number | string | null;
+  toefl_passed?: boolean | null;
+  graduation_date?: string | null; // Y-m-d
+  interview_location?: string | null;
+  createdAt?: string | null;
+}
+
+export interface FtapVacancyOption {
+  id: number;
+  name: string;
+  department: string | null;
+  group: string | null;
+  is_active: boolean;
+  is_visible: boolean;
+  expires_at: string | null;
+  org_rec_id: number | null;
+}
+
+export interface FtapOptions {
+  interview_locations: string[];
+  interview_location_note: string;
+  toefl_types: {
+    value: string;
+    label: string;
+    min_pass: number;
+    scale_min: number;
+    scale_max: number;
+  }[];
+  vacancies: FtapVacancyOption[];
+}
+
 export interface Candidate {
   CanId: number;
   CanCode: string;
@@ -381,6 +420,7 @@ export interface Candidate {
   latest_done_ai_screening?: ScreeningSummary | null;
   latest_ai_interview?: InterviewSummary | null;
   latest_completed_ai_interview?: InterviewSummary | null;
+  ftap?: CandidateFtap | null;
 }
 
 export interface CandidatePaginationData {
@@ -429,6 +469,17 @@ export interface CandidateFilters {
   ai_score_min?: string | number;
   ai_score_max?: string | number;
   ai_recommendation?: string;
+  // Filter program FTAP (lihat CandidateController::applyListFilters)
+  ftap?: 0 | 1 | boolean;
+  ftap_department?: string | string[];
+  toefl_type?: string;
+  toefl_score_min?: string | number;
+  toefl_score_max?: string | number;
+  toefl_passed?: 0 | 1 | boolean | string;
+  interview_location?: string | string[];
+  graduation_from?: string;
+  graduation_to?: string;
+  ktp_number?: string;
   [key: string]: any; // Allow dynamic column filters
 }
 
@@ -609,31 +660,81 @@ export const downloadCandidateAttachments = async (
   };
 };
 
-// Export kandidat berdasarkan rentang tanggal (start_date & end_date, format YYYY-MM-DD).
-// Backend route: GET /api/admin/candidates/export
+/**
+ * Ubah CandidateFilters menjadi query params untuk backend: array dikirim sebagai key[],
+ * nilai kosong / "all" / "none" dibuang. Dipakai getCandidates dan exportCandidates agar
+ * export Excel selalu memakai filter yang persis sama dengan daftar di layar.
+ */
+export const buildCandidateQueryParams = (
+  filters: CandidateFilters = {},
+): Record<string, any> => {
+  const params: Record<string, any> = {};
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    if (Array.isArray(value)) {
+      if (value.length > 0) params[`${key}[]`] = value;
+      return;
+    }
+    if (typeof value === "boolean") {
+      params[key] = value ? 1 : 0;
+      return;
+    }
+    if (value === "all" || value === "none") return;
+    params[key] = value;
+  });
+  return params;
+};
+
+/**
+ * Export kandidat ke Excel. Backend route: GET /api/admin/candidates/export.
+ *
+ * Menerima filter yang sama dengan getCandidates (name, vacancy_name, EduMjrName,
+ * ai_score_min, ftap, toefl_type, toefl_score_min, ...). Bentuk lama
+ * exportCandidates(startDate, endDate) tetap didukung.
+ */
 export const exportCandidates = async (
-  startDate: string,
-  endDate: string,
+  filtersOrStartDate: CandidateFilters | string,
+  endDate?: string,
 ): Promise<{ blob: Blob; filename: string }> => {
+  const filters: CandidateFilters =
+    typeof filtersOrStartDate === "string"
+      ? { start_date: filtersOrStartDate, end_date: endDate }
+      : filtersOrStartDate;
+
+  // Paging tidak relevan untuk export: seluruh hasil filter ditulis ke satu file.
+  const rest: CandidateFilters = { ...filters };
+  delete rest.page;
+  delete rest.per_page;
+  const params = buildCandidateQueryParams(rest);
+
   const response = await api.get(`${localApiBaseUrl}/admin/candidates/export`, {
-    params: {
-      start_date: startDate,
-      end_date: endDate,
-    },
+    params,
     responseType: "blob",
   });
 
   // Extract filename from Content-Disposition header, fallback to a sensible default
   const disposition = String(response.headers["content-disposition"] ?? "");
   const match = disposition.match(/filename\*?="?([^";]+)"?/i);
-  const filename = match?.[1]
-    ? decodeURIComponent(match[1])
-    : `candidates-${startDate}-to-${endDate}.xlsx`;
+  const fallback =
+    filters.start_date || filters.end_date
+      ? `candidates-${filters.start_date ?? "awal"}-to-${filters.end_date ?? "sekarang"}.xlsx`
+      : `candidates-filtered-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const filename = match?.[1] ? decodeURIComponent(match[1]) : fallback;
 
   return {
     blob: response.data,
     filename,
   };
+};
+
+/** Master filter daftar kandidat FTAP (lowongan/departemen, tempat interview, jenis TOEFL). */
+export const getFtapOptions = async (): Promise<{
+  success: boolean;
+  message: string;
+  data: FtapOptions;
+}> => {
+  const response = await api.get(`${localApiBaseUrl}/candidates/ftap/options`);
+  return response.data;
 };
 
 // ============================================================================

@@ -30,7 +30,11 @@ const App = () => {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="jobs" element={<JobsPage />} />
-          <Route path="candidates" element={<CandidatesPage />} />
+          {/* `key` memaksa remount saat pindah list umum <-> FTAP; tanpa itu React hanya mengganti props
+              dan state (halaman, filter) list sebelumnya ikut terbawa ke varian lain. */}
+          <Route path="candidates" element={<CandidatesPage key="general" />} />
+          {/* Daftar kandidat mass hiring FTAP: halaman yang sama dengan varian kolom/filter khusus */}
+          <Route path="candidates/ftap" element={<CandidatesPage key="ftap" variant="ftap" />} />
           <Route path="candidates/:id" element={<CandidateDetailPage />} />
           <Route path="applications" element={<ApplicationsPage />} />
 

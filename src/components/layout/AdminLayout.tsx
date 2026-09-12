@@ -11,6 +11,7 @@ import {
   Bell,
   ChevronDown,
   Compass,
+  GraduationCap,
   LogOut,
   Menu,
   Moon,
@@ -32,6 +33,13 @@ const sidebarGroups = [
     title: "RECRUITMENT",
     links: [
       { name: "Candidates", href: "/admin/candidates", icon: UserCircle },
+      // Daftar kandidat mass hiring FTAP (Future Talent Acceleration Program), dipisah dari
+      // daftar umum karena kolom & filternya berbeda (TOEFL, KTP, tempat interview offline).
+      {
+        name: "FTAP Candidates",
+        href: "/admin/candidates/ftap",
+        icon: GraduationCap,
+      },
     ],
   },
   {
@@ -179,10 +187,17 @@ const AdminLayout: React.FC = () => {
                 <ul className="space-y-1.5">
                   {group.links.map((link) => {
                     const Icon = link.icon;
+                    // Menu induk tidak ikut aktif saat sub-menu-nya yang dibuka
+                    // (mis. /admin/candidates vs /admin/candidates/ftap), tapi tetap aktif
+                    // di halaman detail /admin/candidates/:id.
+                    const childHrefs = group.links
+                      .filter((l) => l !== link && l.href.startsWith(`${link.href}/`))
+                      .map((l) => l.href);
                     const isActive =
                       link.href === "/admin"
                         ? location.pathname === "/admin"
-                        : location.pathname.startsWith(link.href);
+                        : location.pathname.startsWith(link.href) &&
+                          !childHrefs.some((h) => location.pathname.startsWith(h));
 
                     return (
                       <li key={link.name}>

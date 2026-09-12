@@ -1,6 +1,15 @@
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 import Lottie from "lottie-react";
-import { Check, ChevronsUpDown, Loader2, Plus, Trash2, X } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  Check,
+  ChevronsUpDown,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import React, { useState } from "react";
 import Turnstile from "react-turnstile";
 import { toast } from "sonner";
@@ -13,6 +22,7 @@ import {
 import { type Vacancy } from "../lib/api/vacancies";
 
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import {
   Command,
   CommandEmpty,
@@ -44,6 +54,14 @@ import {
   isAllowedDocumentFile,
   OPERATOR_UNIT_GROUPS,
 } from "@/lib/constants/operatorUnits";
+import {
+  FTAP_INTERVIEW_LOCATION_NOTE,
+  FTAP_INTERVIEW_LOCATIONS,
+  FTAP_TOEFL_REQUIREMENT_LABEL,
+  FTAP_TOEFL_TYPES,
+  getToeflType,
+  isFtapVacancy,
+} from "@/lib/constants/ftap";
 
 export interface Province {
   code: string;
@@ -116,17 +134,33 @@ export const ApplyJobModal = ({
     [vacancy],
   );
 
+  // Lowongan program FTAP (mass hiring): form meminta data tambahan — skor TOEFL/IELTS,
+  // tanggal kelulusan, dan tempat interview offline (terkunci setelah lamaran dikirim).
+  // No. HP WhatsApp diambil dari field "No. HP/WhatsApp" di section Alamat & Kontak dan
+  // nomor KTP dari baris identitas berjenis KTP di section Identitas, supaya tidak diisi dua kali.
+  // FTAP menang atas level Operator/Mechanic: lowongan "FTAP - Operator (...)" atau
+  // "FTAP - Mechanic (...)" TIDAK mewajibkan SIMPER/Mine Permit/BMC maupun pilihan unit.
+  const isFtapPosition = React.useMemo(() => isFtapVacancy(vacancy), [vacancy]);
+
   // Lowongan level Operator: pelamar wajib memilih unit yang dikuasai.
   const isOperatorPosition = React.useMemo(
-    () => matchesLevel(["operator"]),
-    [matchesLevel],
+    () => !isFtapPosition && matchesLevel(["operator"]),
+    [isFtapPosition, matchesLevel],
   );
 
   // Lowongan level Mechanic/Mekanik: pelamar wajib melampirkan dokumen BMC.
   const isMechanicPosition = React.useMemo(
-    () => matchesLevel(["mechanic", "mekanik"]),
-    [matchesLevel],
+    () => !isFtapPosition && matchesLevel(["mechanic", "mekanik"]),
+    [isFtapPosition, matchesLevel],
   );
+  const [ftapData, setFtapData] = useState({
+    toefl_type: "",
+    toefl_score: "",
+    graduation_date: "",
+    interview_location: "",
+  });
+  const [openGraduationDate, setOpenGraduationDate] = useState(false);
+  const selectedToeflType = getToeflType(ftapData.toefl_type);
 
   // Dokumen wajib mengikuti level lowongan (Operator / Mechanic / lainnya).
   const requiredDocuments = React.useMemo(
@@ -853,6 +887,18 @@ export const ApplyJobModal = ({
     setDocuments(documents.filter((_, i) => i !== index));
   };
 
+  // Nomor KTP dari baris identitas berjenis KTP (PMCardType 1 / nama tipe "KTP"); hanya digit.
+  const getKtpIdentityNumber = (): string => {
+    const ktpTypeIds = new Set(
+      cardTypes
+        .filter((t) => t.CardTypeId === 1 || /ktp/i.test(t.CardType || ""))
+        .map((t) => String(t.CardTypeId)),
+    );
+    if (ktpTypeIds.size === 0) ktpTypeIds.add("1");
+    const ktp = identities.find((i) => ktpTypeIds.has(String(i.card_type_id)));
+    return (ktp?.number || "").replace(/\D+/g, "");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -883,6 +929,50 @@ export const ApplyJobModal = ({
         toast.error(`${rowLabel}: Nama Perusahaan wajib diisi.`);
       }
       return;
+    }
+
+    if (isFtapPosition) {
+      const wa = formData.mobile_phone.replace(/[^\d+]/g, "");
+      if (wa.length < 9) {
+        toast.error(
+          "No. HP/WhatsApp wajib diisi (minimal 9 digit) — dipakai untuk undangan seleksi FTAP.",
+        );
+        return;
+      }
+      const ktp = getKtpIdentityNumber();
+      if (!ktp) {
+        toast.error(
+          "Lowongan FTAP wajib menyertakan KTP: tambahkan identitas berjenis KTP di bagian Identitas Lengkap.",
+        );
+        return;
+      }
+      if (ktp.length !== 16) {
+        toast.error("Nomor KTP di bagian Identitas Lengkap harus 16 digit angka.");
+        return;
+      }
+      if (!selectedToeflType) {
+        toast.error("Pilih jenis tes bahasa Inggris (TOEFL ITP / iBT / IELTS).");
+        return;
+      }
+      const score = Number(ftapData.toefl_score);
+      if (ftapData.toefl_score === "" || Number.isNaN(score)) {
+        toast.error(`Skor ${selectedToeflType.label} wajib diisi.`);
+        return;
+      }
+      if (score < selectedToeflType.scaleMin || score > selectedToeflType.scaleMax) {
+        toast.error(
+          `Skor ${selectedToeflType.label} harus di antara ${selectedToeflType.scaleMin} dan ${selectedToeflType.scaleMax}.`,
+        );
+        return;
+      }
+      if (!ftapData.graduation_date) {
+        toast.error("Tanggal kelulusan wajib diisi.");
+        return;
+      }
+      if (!ftapData.interview_location) {
+        toast.error("Pilih tempat interview offline FTAP.");
+        return;
+      }
     }
 
     if (!formData.is_declared_true) {
@@ -1052,6 +1142,22 @@ export const ApplyJobModal = ({
 
       if (captchaToken) {
         data.append("captcha_token", captchaToken);
+      }
+
+      // Data khusus FTAP: backend memvalidasi ulang dan menyimpannya ke tbl_t_candidate_ftap;
+      // nomor KTP juga otomatis masuk daftar identitas bila belum ada.
+      if (isFtapPosition) {
+        data.append(
+          "ftap",
+          JSON.stringify({
+            whatsapp_number: formData.mobile_phone.replace(/[^\d+]/g, ""),
+            ktp_number: getKtpIdentityNumber(),
+            toefl_type: ftapData.toefl_type,
+            toefl_score: Number(ftapData.toefl_score),
+            graduation_date: ftapData.graduation_date,
+            interview_location: ftapData.interview_location,
+          }),
+        );
       }
 
       const res = await submitApplication(data);
@@ -1755,6 +1861,160 @@ export const ApplyJobModal = ({
                 </div>
               </div>
 
+              {/* 2b. Data Program FTAP (hanya lowongan FTAP) */}
+              {isFtapPosition && (
+                <div className="space-y-4">
+                  <div className="border-b pb-2">
+                    <h3 className="text-lg font-bold text-slate-800">
+                      Data Program FTAP
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Future Talent Acceleration Program — {vacancy.VacantPositionName}.
+                      Syarat bahasa Inggris: {FTAP_TOEFL_REQUIREMENT_LABEL}.
+                    </p>
+                  </div>
+
+                  <p className="text-xs text-slate-500">
+                    Undangan seleksi dikirim lewat WhatsApp ke No. HP/WhatsApp di bagian Alamat &
+                    Kontak. Nomor KTP (16 digit) wajib diisi di bagian Identitas Lengkap.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ftap_toefl_type">Jenis Tes Bahasa Inggris*</Label>
+                      <Select
+                        value={ftapData.toefl_type}
+                        onValueChange={(v) =>
+                          setFtapData((prev) => ({ ...prev, toefl_type: v, toefl_score: "" }))
+                        }
+                      >
+                        <SelectTrigger id="ftap_toefl_type" className="w-full">
+                          <SelectValue placeholder="Pilih jenis tes" />
+                        </SelectTrigger>
+                        {/* Modal lamaran z-[100]; konten portal harus di atasnya (pola yang sama dengan Select lain di form ini) */}
+                        <SelectContent className="z-[150]">
+                          {FTAP_TOEFL_TYPES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label} (minimal {t.minPass})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="ftap_toefl_score">
+                        Skor {selectedToeflType?.label ?? "TOEFL / IELTS"}*
+                      </Label>
+                      <Input
+                        id="ftap_toefl_score"
+                        type="number"
+                        required
+                        disabled={!selectedToeflType}
+                        min={selectedToeflType?.scaleMin}
+                        max={selectedToeflType?.scaleMax}
+                        step={selectedToeflType?.step ?? 1}
+                        value={ftapData.toefl_score}
+                        onChange={(e) =>
+                          setFtapData((prev) => ({ ...prev, toefl_score: e.target.value }))
+                        }
+                        placeholder={
+                          selectedToeflType
+                            ? `${selectedToeflType.scaleMin} - ${selectedToeflType.scaleMax}`
+                            : "Pilih jenis tes dahulu"
+                        }
+                      />
+                      {selectedToeflType && ftapData.toefl_score !== "" && (
+                        <p
+                          className={cn(
+                            "text-[11px]",
+                            Number(ftapData.toefl_score) >= selectedToeflType.minPass
+                              ? "text-emerald-600"
+                              : "text-amber-600",
+                          )}
+                        >
+                          {Number(ftapData.toefl_score) >= selectedToeflType.minPass
+                            ? `Memenuhi syarat minimal ${selectedToeflType.label} ${selectedToeflType.minPass}.`
+                            : `Di bawah syarat minimal ${selectedToeflType.label} ${selectedToeflType.minPass}. Lamaran tetap bisa dikirim.`}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="ftap_graduation">Tanggal Kelulusan*</Label>
+                      <Popover open={openGraduationDate} onOpenChange={setOpenGraduationDate}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            id="ftap_graduation"
+                            type="button"
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal px-3 bg-transparent",
+                              !ftapData.graduation_date && "text-muted-foreground",
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4 text-slate-500" />
+                            {ftapData.graduation_date
+                              ? format(new Date(ftapData.graduation_date + "T00:00:00"), "dd MMMM yyyy")
+                              : "Pilih tanggal kelulusan"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 z-[160]" align="start">
+                          <Calendar
+                            mode="single"
+                            captionLayout="dropdown"
+                            startMonth={new Date(new Date().getFullYear() - 15, 0)}
+                            endMonth={new Date(new Date().getFullYear() + 2, 11)}
+                            selected={
+                              ftapData.graduation_date
+                                ? new Date(ftapData.graduation_date + "T00:00:00")
+                                : undefined
+                            }
+                            onSelect={(date) => {
+                              setFtapData((prev) => ({
+                                ...prev,
+                                graduation_date: date ? format(date, "yyyy-MM-dd") : "",
+                              }));
+                              setOpenGraduationDate(false);
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <p className="text-[11px] text-slate-500">
+                        Sesuai tanggal di ijazah / SKL pendidikan terakhir.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="ftap_location">Tempat Interview Offline*</Label>
+                      <Select
+                        value={ftapData.interview_location}
+                        onValueChange={(v) =>
+                          setFtapData((prev) => ({ ...prev, interview_location: v }))
+                        }
+                      >
+                        <SelectTrigger id="ftap_location" className="w-full">
+                          <SelectValue placeholder="Pilih kota interview" />
+                        </SelectTrigger>
+                        <SelectContent className="z-[150]">
+                          {FTAP_INTERVIEW_LOCATIONS.map((loc) => (
+                            <SelectItem key={loc} value={loc}>
+                              {loc}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                    <span className="font-bold shrink-0">Catatan:</span>
+                    <span>{FTAP_INTERVIEW_LOCATION_NOTE}</span>
+                  </div>
+                </div>
+              )}
+
               {/* 3. Identity Card */}
               <div className="space-y-4">
                 <div className="flex justify-between items-center border-b pb-2">
@@ -1771,6 +2031,11 @@ export const ApplyJobModal = ({
                     <Plus className="w-4 h-4 mr-1" /> Tambah Identitas
                   </Button>
                 </div>
+                {isFtapPosition && (
+                  <p className="text-xs text-slate-500 -mt-2">
+                    Lowongan FTAP wajib menyertakan identitas berjenis KTP (NIK 16 digit).
+                  </p>
+                )}
                 {identities.map((identity, index) => (
                   <div
                     key={index}

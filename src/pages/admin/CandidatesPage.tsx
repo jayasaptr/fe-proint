@@ -39,11 +39,20 @@ import {
   downloadCandidateAttachments,
   exportCandidates,
   getCandidates,
+  getFtapOptions,
   postApplyToSqlServer,
   toggleCandidateChecklist,
   toggleCandidatePassed,
   type Candidate,
+  type CandidateFilters,
 } from "@/lib/api/candidates";
+import {
+  FTAP_DEPARTMENTS,
+  FTAP_INTERVIEW_LOCATIONS,
+  FTAP_TOEFL_TYPES,
+  formatToeflScore,
+  getToeflType,
+} from "@/lib/constants/ftap";
 import { bulkScreenCandidates, isScreeningPending } from "@/lib/api/screening";
 import api from "@/lib/axios";
 import { cn } from "@/lib/utils";
@@ -63,6 +72,8 @@ import {
   Eye,
   FileSpreadsheet,
   Filter,
+  GraduationCap,
+  IdCard,
   Loader2,
   Mail,
   MapPin,
@@ -143,6 +154,23 @@ const getAddressDetail = (candidate: Candidate) => {
   if (!addr) return "-";
   return addr.CanResAddress || addr.CanOriAddress || "-";
 };
+// Nomor KTP dari daftar kartu identitas (PMCardType 1 = KTP). Fallback: nomor 16 digit apa pun.
+const getKtpNumber = (candidate: Candidate) => {
+  const cards: any[] =
+    candidate.identities || candidate.id_cards || (candidate as any).idCards || candidate.cards || [];
+  const ktp =
+    cards.find((c) => Number(c?.CardTypeId ?? c?.card_type_id) === 1) ||
+    cards.find((c) => /^\d{16}$/.test(String(c?.CardNumber ?? c?.number ?? "")));
+  return (ktp?.CardNumber ?? ktp?.number ?? "") as string;
+};
+
+const formatShortDate = (value?: string | null) => {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return format(d, "dd MMM yyyy");
+};
+
 // --- Session Storage Helper ---
 const getSessionState = (key: string, defaultValue: any) => {
   try {
@@ -157,73 +185,129 @@ const getSessionState = (key: string, defaultValue: any) => {
 };
 
 // --- Main Page Component ---
-const CandidatesPage: React.FC = () => {
+interface CandidatesPageProps {
+  /**
+   * "ftap": daftar kandidat mass hiring FTAP (Future Talent Acceleration Program).
+   * Menambah filter & kolom khusus (TOEFL, KTP, tanggal lulus, tempat interview offline),
+   * hanya menampilkan kandidat FTAP (backend param ftap=1), dan export mengikuti filter aktif.
+   */
+  variant?: "general" | "ftap";
+}
+
+const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) => {
   const navigate = useNavigate();
   const { currentUser } = useOutletContext<{ currentUser: any }>();
   const isAdmin = currentUser?.is_admin;
+  const isFtap = variant === "ftap";
+  // Kunci sessionStorage dipisah per varian supaya filter list umum dan list FTAP tidak saling timpa.
+  const storagePrefix = isFtap ? "ftap_candidates" : "candidates";
+  const sk = React.useCallback(
+    (key: string) => `${storagePrefix}_${key}`,
+    [storagePrefix],
+  );
   const [page, setPage] = useState<number>(() =>
-    getSessionState("candidates_page", 1),
+    getSessionState(sk("page"), 1),
   );
 
   // Filter UI states
   const [showFilters, setShowFilters] = useState<boolean>(() =>
-    getSessionState("candidates_showFilters", false),
+    getSessionState(sk("showFilters"), false),
   );
   const [searchTerm, setSearchTerm] = useState<string>(() =>
-    getSessionState("candidates_searchTerm", ""),
+    getSessionState(sk("searchTerm"), ""),
   );
   const [vacancyName, setVacancyName] = useState<string>(() =>
-    getSessionState("candidates_vacancyName", ""),
+    getSessionState(sk("vacancyName"), ""),
   );
   const [statusApply, setStatusApply] = useState<string>(() =>
-    getSessionState("candidates_statusApply", ""),
+    getSessionState(sk("statusApply"), ""),
   );
   const [startDate, setStartDate] = useState<string>(() =>
-    getSessionState("candidates_startDate", ""),
+    getSessionState(sk("startDate"), ""),
   );
   const [endDate, setEndDate] = useState<string>(() =>
-    getSessionState("candidates_endDate", ""),
+    getSessionState(sk("endDate"), ""),
   );
   const [province, setProvince] = useState<string[]>(() => {
-    const val = getSessionState("candidates_province", []);
+    const val = getSessionState(sk("province"), []);
     return Array.isArray(val) ? val : [];
   });
   const [city, setCity] = useState<string[]>(() => {
-    const val = getSessionState("candidates_city", []);
+    const val = getSessionState(sk("city"), []);
     return Array.isArray(val) ? val : [];
   });
   const [eduLevel, setEduLevel] = useState<string[]>(() => {
-    const val = getSessionState("candidates_eduLevel", []);
+    const val = getSessionState(sk("eduLevel"), []);
     return Array.isArray(val) ? val : [];
   });
   const [eduMajor, setEduMajor] = useState<string[]>(() => {
-    const val = getSessionState("candidates_eduMajor", []);
+    const val = getSessionState(sk("eduMajor"), []);
     return Array.isArray(val) ? val : [];
   });
   const [gender, setGender] = useState<string>(() =>
-    getSessionState("candidates_gender", ""),
+    getSessionState(sk("gender"), ""),
   );
   const [isChecked, setIsChecked] = useState<string>(() =>
-    getSessionState("candidates_isChecked", ""),
+    getSessionState(sk("isChecked"), ""),
   );
   const [isPassed, setIsPassed] = useState<string>(() =>
-    getSessionState("candidates_isPassed", ""),
+    getSessionState(sk("isPassed"), ""),
   );
   const [passedNote, setPassedNote] = useState<string>(() =>
-    getSessionState("candidates_passedNote", ""),
+    getSessionState(sk("passedNote"), ""),
   );
   // AI Screening filters
   const [aiStatus, setAiStatus] = useState<string>(() =>
-    getSessionState("candidates_aiStatus", ""),
+    getSessionState(sk("aiStatus"), ""),
   );
   const [aiScoreMin, setAiScoreMin] = useState<string>(() =>
-    getSessionState("candidates_aiScoreMin", ""),
+    getSessionState(sk("aiScoreMin"), ""),
   );
   const [aiScoreMax, setAiScoreMax] = useState<string>(() =>
-    getSessionState("candidates_aiScoreMax", ""),
+    getSessionState(sk("aiScoreMax"), ""),
   );
   const [aiSort, setAiSort] = useState<string>(() =>
-    getSessionState("candidates_aiSort", ""),
+    getSessionState(sk("aiSort"), ""),
+  );
+  // AI Interview filters (terpisah dari AI screening CV)
+  const [interviewStatus, setInterviewStatus] = useState<string>(() =>
+    getSessionState(sk("interviewStatus"), ""),
+  );
+  const [interviewScoreMin, setInterviewScoreMin] = useState<string>(() =>
+    getSessionState(sk("interviewScoreMin"), ""),
+  );
+  const [interviewScoreMax, setInterviewScoreMax] = useState<string>(() =>
+    getSessionState(sk("interviewScoreMax"), ""),
+  );
+  // Filter khusus FTAP
+  const [ftapDepartment, setFtapDepartment] = useState<string[]>(() => {
+    const val = getSessionState(sk("ftapDepartment"), []);
+    return Array.isArray(val) ? val : [];
+  });
+  const [toeflType, setToeflType] = useState<string>(() =>
+    getSessionState(sk("toeflType"), ""),
+  );
+  const [toeflMin, setToeflMin] = useState<string>(() =>
+    getSessionState(sk("toeflMin"), ""),
+  );
+  const [toeflMax, setToeflMax] = useState<string>(() =>
+    getSessionState(sk("toeflMax"), ""),
+  );
+  const [toeflPassed, setToeflPassed] = useState<string>(() =>
+    getSessionState(sk("toeflPassed"), ""),
+  );
+  const [interviewLocation, setInterviewLocation] = useState<string[]>(() => {
+    const val = getSessionState(sk("interviewLocation"), []);
+    return Array.isArray(val) ? val : [];
+  });
+  const [ktpNumber, setKtpNumber] = useState<string>(() =>
+    getSessionState(sk("ktpNumber"), ""),
+  );
+  const [graduationFrom, setGraduationFrom] = useState<string>(() =>
+    getSessionState(sk("graduationFrom"), ""),
+  );
+  const [graduationTo, setGraduationTo] = useState<string>(() =>
+    getSessionState(sk("graduationTo"), ""),
   );
   // Bulk selection for AI screening
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -248,10 +332,22 @@ const CandidatesPage: React.FC = () => {
     aiScoreMin: "",
     aiScoreMax: "",
     aiSort: "",
+    interviewStatus: "",
+    interviewScoreMin: "",
+    interviewScoreMax: "",
+    ftapDepartment: [] as string[],
+    toeflType: "",
+    toeflMin: "",
+    toeflMax: "",
+    toeflPassed: "",
+    interviewLocation: [] as string[],
+    ktpNumber: "",
+    graduationFrom: "",
+    graduationTo: "",
   };
   const [appliedFilters, setAppliedFilters] = useState(() => {
     const val = getSessionState(
-      "candidates_appliedFilters",
+      sk("appliedFilters"),
       defaultAppliedFilters,
     );
     return {
@@ -261,41 +357,55 @@ const CandidatesPage: React.FC = () => {
       city: Array.isArray(val?.city) ? val.city : [],
       eduLevel: Array.isArray(val?.eduLevel) ? val.eduLevel : [],
       eduMajor: Array.isArray(val?.eduMajor) ? val.eduMajor : [],
+      ftapDepartment: Array.isArray(val?.ftapDepartment) ? val.ftapDepartment : [],
+      interviewLocation: Array.isArray(val?.interviewLocation) ? val.interviewLocation : [],
     };
   });
 
   // Persist states to sessionStorage
   useEffect(() => {
-    sessionStorage.setItem("candidates_page", JSON.stringify(page));
+    sessionStorage.setItem(sk("page"), JSON.stringify(page));
     sessionStorage.setItem(
-      "candidates_showFilters",
+      sk("showFilters"),
       JSON.stringify(showFilters),
     );
-    sessionStorage.setItem("candidates_searchTerm", JSON.stringify(searchTerm));
+    sessionStorage.setItem(sk("searchTerm"), JSON.stringify(searchTerm));
     sessionStorage.setItem(
-      "candidates_vacancyName",
+      sk("vacancyName"),
       JSON.stringify(vacancyName),
     );
     sessionStorage.setItem(
-      "candidates_statusApply",
+      sk("statusApply"),
       JSON.stringify(statusApply),
     );
-    sessionStorage.setItem("candidates_startDate", JSON.stringify(startDate));
-    sessionStorage.setItem("candidates_endDate", JSON.stringify(endDate));
-    sessionStorage.setItem("candidates_province", JSON.stringify(province));
-    sessionStorage.setItem("candidates_city", JSON.stringify(city));
-    sessionStorage.setItem("candidates_eduLevel", JSON.stringify(eduLevel));
-    sessionStorage.setItem("candidates_eduMajor", JSON.stringify(eduMajor));
-    sessionStorage.setItem("candidates_gender", JSON.stringify(gender));
-    sessionStorage.setItem("candidates_isChecked", JSON.stringify(isChecked));
-    sessionStorage.setItem("candidates_isPassed", JSON.stringify(isPassed));
-    sessionStorage.setItem("candidates_passedNote", JSON.stringify(passedNote));
-    sessionStorage.setItem("candidates_aiStatus", JSON.stringify(aiStatus));
-    sessionStorage.setItem("candidates_aiScoreMin", JSON.stringify(aiScoreMin));
-    sessionStorage.setItem("candidates_aiScoreMax", JSON.stringify(aiScoreMax));
-    sessionStorage.setItem("candidates_aiSort", JSON.stringify(aiSort));
+    sessionStorage.setItem(sk("startDate"), JSON.stringify(startDate));
+    sessionStorage.setItem(sk("endDate"), JSON.stringify(endDate));
+    sessionStorage.setItem(sk("province"), JSON.stringify(province));
+    sessionStorage.setItem(sk("city"), JSON.stringify(city));
+    sessionStorage.setItem(sk("eduLevel"), JSON.stringify(eduLevel));
+    sessionStorage.setItem(sk("eduMajor"), JSON.stringify(eduMajor));
+    sessionStorage.setItem(sk("gender"), JSON.stringify(gender));
+    sessionStorage.setItem(sk("isChecked"), JSON.stringify(isChecked));
+    sessionStorage.setItem(sk("isPassed"), JSON.stringify(isPassed));
+    sessionStorage.setItem(sk("passedNote"), JSON.stringify(passedNote));
+    sessionStorage.setItem(sk("aiStatus"), JSON.stringify(aiStatus));
+    sessionStorage.setItem(sk("aiScoreMin"), JSON.stringify(aiScoreMin));
+    sessionStorage.setItem(sk("aiScoreMax"), JSON.stringify(aiScoreMax));
+    sessionStorage.setItem(sk("aiSort"), JSON.stringify(aiSort));
+    sessionStorage.setItem(sk("interviewStatus"), JSON.stringify(interviewStatus));
+    sessionStorage.setItem(sk("interviewScoreMin"), JSON.stringify(interviewScoreMin));
+    sessionStorage.setItem(sk("interviewScoreMax"), JSON.stringify(interviewScoreMax));
+    sessionStorage.setItem(sk("ftapDepartment"), JSON.stringify(ftapDepartment));
+    sessionStorage.setItem(sk("toeflType"), JSON.stringify(toeflType));
+    sessionStorage.setItem(sk("toeflMin"), JSON.stringify(toeflMin));
+    sessionStorage.setItem(sk("toeflMax"), JSON.stringify(toeflMax));
+    sessionStorage.setItem(sk("toeflPassed"), JSON.stringify(toeflPassed));
+    sessionStorage.setItem(sk("interviewLocation"), JSON.stringify(interviewLocation));
+    sessionStorage.setItem(sk("ktpNumber"), JSON.stringify(ktpNumber));
+    sessionStorage.setItem(sk("graduationFrom"), JSON.stringify(graduationFrom));
+    sessionStorage.setItem(sk("graduationTo"), JSON.stringify(graduationTo));
     sessionStorage.setItem(
-      "candidates_appliedFilters",
+      sk("appliedFilters"),
       JSON.stringify(appliedFilters),
     );
   }, [
@@ -318,7 +428,20 @@ const CandidatesPage: React.FC = () => {
     aiScoreMin,
     aiScoreMax,
     aiSort,
+    interviewStatus,
+    interviewScoreMin,
+    interviewScoreMax,
+    ftapDepartment,
+    toeflType,
+    toeflMin,
+    toeflMax,
+    toeflPassed,
+    interviewLocation,
+    ktpNumber,
+    graduationFrom,
+    graduationTo,
     appliedFilters,
+    sk,
   ]);
 
   const handleApplyFilters = () => {
@@ -340,6 +463,18 @@ const CandidatesPage: React.FC = () => {
       aiScoreMin,
       aiScoreMax,
       aiSort,
+      interviewStatus,
+      interviewScoreMin,
+      interviewScoreMax,
+      ftapDepartment,
+      toeflType,
+      toeflMin,
+      toeflMax,
+      toeflPassed,
+      interviewLocation,
+      ktpNumber,
+      graduationFrom,
+      graduationTo,
     });
     setPage(1);
   };
@@ -362,9 +497,47 @@ const CandidatesPage: React.FC = () => {
     setAiScoreMin("");
     setAiScoreMax("");
     setAiSort("");
+    setInterviewStatus("");
+    setInterviewScoreMin("");
+    setInterviewScoreMax("");
+    setFtapDepartment([]);
+    setToeflType("");
+    setToeflMin("");
+    setToeflMax("");
+    setToeflPassed("");
+    setInterviewLocation([]);
+    setKtpNumber("");
+    setGraduationFrom("");
+    setGraduationTo("");
     setAppliedFilters(defaultAppliedFilters);
     setPage(1);
   };
+
+  // Master filter FTAP dari backend (lowongan "FTAP - <Departemen>" di SQL Server, tempat interview).
+  const { data: ftapOptionsResponse } = useQuery({
+    queryKey: ["ftap-options"],
+    queryFn: getFtapOptions,
+    enabled: isFtap,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const ftapDepartmentOptions = React.useMemo(() => {
+    const fromApi = (ftapOptionsResponse?.data?.vacancies ?? [])
+      .map((v) => v.department || v.name)
+      .filter((d): d is string => Boolean(d));
+    const names = fromApi.length > 0 ? fromApi : [...FTAP_DEPARTMENTS];
+    return Array.from(new Set(names)).map((name) => ({ label: name, value: name }));
+  }, [ftapOptionsResponse]);
+
+  const ftapLocationOptions = React.useMemo(() => {
+    const list = ftapOptionsResponse?.data?.interview_locations?.length
+      ? ftapOptionsResponse.data.interview_locations
+      : [...FTAP_INTERVIEW_LOCATIONS];
+    return list.map((name) => ({
+      label: name.replace(/^Recruitment FTAP\s*-\s*/i, ""),
+      value: name,
+    }));
+  }, [ftapOptionsResponse]);
 
   const { data: statesResponse } = useQuery({
     queryKey: ["states"],
@@ -456,6 +629,70 @@ const CandidatesPage: React.FC = () => {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Parameter API dari filter yang sudah di-apply. Dipakai untuk list DAN export Excel,
+  // sehingga file yang diunduh selalu berisi persis data yang sedang ditampilkan.
+  const apiFilters = React.useMemo<CandidateFilters>(() => {
+    const f = appliedFilters;
+    const sort: Partial<CandidateFilters> = (() => {
+      switch (f.aiSort) {
+        case "desc":
+        case "asc":
+          return { sort_by: "ai_score", sort_direction: f.aiSort };
+        case "interview_desc":
+          return { sort_by: "interview_score", sort_direction: "desc" };
+        case "interview_asc":
+          return { sort_by: "interview_score", sort_direction: "asc" };
+        case "toefl_desc":
+          return { sort_by: "toefl_score", sort_direction: "desc" };
+        case "toefl_asc":
+          return { sort_by: "toefl_score", sort_direction: "asc" };
+        case "graduation_desc":
+          return { sort_by: "graduation_date", sort_direction: "desc" };
+        case "graduation_asc":
+          return { sort_by: "graduation_date", sort_direction: "asc" };
+        default:
+          return {};
+      }
+    })();
+
+    return {
+      // List FTAP hanya kandidat FTAP (ftap=1); list umum mengecualikan mereka (ftap=0)
+      // supaya kedua daftar saling lepas. Export mengikuti nilai yang sama.
+      ftap: isFtap ? 1 : 0,
+      ...(f.name && { name: f.name }),
+      ...(f.vacancyName && { vacancy_name: f.vacancyName }),
+      ...(f.statusApply && f.statusApply !== "all" && { status_apply: f.statusApply }),
+      ...(f.startDate && { start_date: f.startDate }),
+      ...(f.endDate && { end_date: f.endDate }),
+      ...(f.province?.length > 0 && { CanOriStateName: f.province }),
+      ...(f.city?.length > 0 && { CanOriCityName: f.city }),
+      ...(f.eduLevel?.length > 0 && { EduLevel: f.eduLevel }),
+      ...(f.eduMajor?.length > 0 && { EduMjrName: f.eduMajor }),
+      ...(f.gender && f.gender !== "all" && { CanSex: f.gender }),
+      ...(f.isChecked && f.isChecked !== "all" && { is_checked: f.isChecked }),
+      ...(f.isPassed && f.isPassed !== "all" && { is_passed: f.isPassed }),
+      ...(f.passedNote?.trim() && { passed_note: f.passedNote.trim() }),
+      ...(f.aiStatus && f.aiStatus !== "all" && { ai_status: f.aiStatus }),
+      ...(f.aiScoreMin !== "" && { ai_score_min: f.aiScoreMin }),
+      ...(f.aiScoreMax !== "" && { ai_score_max: f.aiScoreMax }),
+      // AI Interview
+      ...(f.interviewStatus && f.interviewStatus !== "all" && { interview_status: f.interviewStatus }),
+      ...(f.interviewScoreMin !== "" && { interview_score_min: f.interviewScoreMin }),
+      ...(f.interviewScoreMax !== "" && { interview_score_max: f.interviewScoreMax }),
+      // FTAP
+      ...(f.ftapDepartment?.length > 0 && { ftap_department: f.ftapDepartment }),
+      ...(f.toeflType && f.toeflType !== "all" && { toefl_type: f.toeflType }),
+      ...(f.toeflMin !== "" && { toefl_score_min: f.toeflMin }),
+      ...(f.toeflMax !== "" && { toefl_score_max: f.toeflMax }),
+      ...(f.toeflPassed && f.toeflPassed !== "all" && { toefl_passed: f.toeflPassed }),
+      ...(f.interviewLocation?.length > 0 && { interview_location: f.interviewLocation }),
+      ...(f.ktpNumber?.trim() && { ktp_number: f.ktpNumber.trim() }),
+      ...(f.graduationFrom && { graduation_from: f.graduationFrom }),
+      ...(f.graduationTo && { graduation_to: f.graduationTo }),
+      ...sort,
+    };
+  }, [appliedFilters, isFtap]);
+
   const {
     data: candidatesResponse,
     isLoading,
@@ -463,90 +700,8 @@ const CandidatesPage: React.FC = () => {
     error,
     refetch,
   } = useQuery({
-    queryKey: [
-      "candidates",
-      appliedFilters.name,
-      appliedFilters.vacancyName,
-      page,
-      appliedFilters.statusApply,
-      appliedFilters.startDate,
-      appliedFilters.endDate,
-      appliedFilters.province,
-      appliedFilters.city,
-      appliedFilters.eduLevel,
-      appliedFilters.eduMajor,
-      appliedFilters.gender,
-      appliedFilters.isChecked,
-      appliedFilters.isPassed,
-      appliedFilters.passedNote,
-      appliedFilters.aiStatus,
-      appliedFilters.aiScoreMin,
-      appliedFilters.aiScoreMax,
-      appliedFilters.aiSort,
-    ],
-    queryFn: () =>
-      getCandidates({
-        name: appliedFilters.name,
-        ...(appliedFilters.vacancyName && {
-          vacancy_name: appliedFilters.vacancyName,
-        }),
-        page,
-        ...(appliedFilters.statusApply &&
-          appliedFilters.statusApply !== "all" && {
-            status_apply: appliedFilters.statusApply,
-          }),
-        ...(appliedFilters.startDate && {
-          start_date: appliedFilters.startDate,
-        }),
-        ...(appliedFilters.endDate && { end_date: appliedFilters.endDate }),
-        ...(appliedFilters.province &&
-          appliedFilters.province.length > 0 && {
-            CanOriStateName: appliedFilters.province,
-          }),
-        ...(appliedFilters.city &&
-          appliedFilters.city.length > 0 && {
-            CanOriCityName: appliedFilters.city,
-          }),
-        ...(appliedFilters.eduLevel &&
-          appliedFilters.eduLevel.length > 0 && {
-            EduLevel: appliedFilters.eduLevel,
-          }),
-        ...(appliedFilters.eduMajor &&
-          appliedFilters.eduMajor.length > 0 && {
-            EduMjrName: appliedFilters.eduMajor,
-          }),
-        ...(appliedFilters.gender &&
-          appliedFilters.gender !== "all" && {
-            CanSex: appliedFilters.gender,
-          }),
-        ...(appliedFilters.isChecked &&
-          appliedFilters.isChecked !== "all" && {
-            is_checked: appliedFilters.isChecked,
-          }),
-        ...(appliedFilters.isPassed &&
-          appliedFilters.isPassed !== "all" && {
-            is_passed: appliedFilters.isPassed,
-          }),
-        ...(appliedFilters.passedNote &&
-          appliedFilters.passedNote.trim() && {
-            passed_note: appliedFilters.passedNote.trim(),
-          }),
-        ...(appliedFilters.aiStatus &&
-          appliedFilters.aiStatus !== "all" && {
-            ai_status: appliedFilters.aiStatus,
-          }),
-        ...(appliedFilters.aiScoreMin !== "" && {
-          ai_score_min: appliedFilters.aiScoreMin,
-        }),
-        ...(appliedFilters.aiScoreMax !== "" && {
-          ai_score_max: appliedFilters.aiScoreMax,
-        }),
-        ...(appliedFilters.aiSort &&
-          appliedFilters.aiSort !== "none" && {
-            sort_by: "ai_score",
-            sort_direction: appliedFilters.aiSort,
-          }),
-      }),
+    queryKey: ["candidates", variant, page, apiFilters],
+    queryFn: () => getCandidates({ ...apiFilters, page }),
     placeholderData: keepPreviousData,
     refetchOnMount: "always",
     // Selama ada kandidat di halaman ini yang masih dalam antrean/proses AI screening,
@@ -573,10 +728,30 @@ const CandidatesPage: React.FC = () => {
     ? candidatesResponse.data?.data || []
     : [];
   const totalPages = Math.max(1, candidatesResponse?.data?.last_page || 1);
+
+  // Halaman tersimpan di sessionStorage bisa melebihi jumlah halaman hasil filter baru
+  // (mis. kembali dari detail setelah data berubah) -> tabel kosong. Kembalikan ke halaman 1.
+  useEffect(() => {
+    if (!isLoading && !isFetching && candidatesResponse?.success && page > totalPages) {
+      setPage(1);
+    }
+  }, [isLoading, isFetching, candidatesResponse?.success, page, totalPages]);
   const totalItems = candidatesResponse?.data?.total || 0;
 
   // ---- Bulk AI screening selection ----
   const pageIds = candidates.map((c) => Number(c.CanId));
+
+  // Konteks navigasi untuk halaman detail: asal list, urutan kandidat di halaman ini, dan
+  // filter aktif, supaya tombol Prev/Next di detail bisa berjalan mengikuti urutan list
+  // (termasuk berpindah halaman) dan tombol Back kembali ke list yang benar.
+  const navState = {
+    from: variant,
+    ids: pageIds,
+    page,
+    totalPages,
+    filters: apiFilters,
+    storagePrefix,
+  };
   const allOnPageSelected =
     pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const someOnPageSelected = pageIds.some((id) => selectedIds.has(id));
@@ -676,6 +851,43 @@ const CandidatesPage: React.FC = () => {
     new Date().getFullYear(),
   );
 
+  // Jumlah filter aktif (selain paging/sort) — dipakai untuk label tombol "Export hasil filter".
+  const activeFilterCount = Object.keys(apiFilters).filter(
+    (k) => !["ftap", "sort_by", "sort_direction"].includes(k),
+  ).length;
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Export persis hasil filter yang sedang tampil (tanpa batasan 1 bulan).
+  // Contoh sourcing FTAP: TOEFL ITP >= 500 + jurusan Statistik -> langsung jadi Excel.
+  const handleExportFiltered = async () => {
+    setLoadingExport(true);
+    try {
+      const { blob, filename } = await exportCandidates(apiFilters);
+      downloadBlob(blob, filename);
+      toast.success(
+        activeFilterCount > 0
+          ? `Export ${totalItems} kandidat sesuai filter aktif berhasil`
+          : `Export ${totalItems} kandidat berhasil`,
+      );
+      setExportDialogOpen(false);
+    } catch (err) {
+      const e = err as any;
+      toast.error(e?.response?.data?.message || "Failed to export candidates");
+    } finally {
+      setLoadingExport(false);
+    }
+  };
+
   const handleExport = async () => {
     if (!exportMonth) {
       toast.error("Please select a month");
@@ -691,15 +903,13 @@ const CandidatesPage: React.FC = () => {
 
     setLoadingExport(true);
     try {
-      const { blob, filename } = await exportCandidates(startDate, endDate);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      // Di list FTAP, export per bulan tetap dibatasi ke kandidat FTAP saja.
+      const { blob, filename } = await exportCandidates({
+        ftap: isFtap ? 1 : 0,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      downloadBlob(blob, filename);
       toast.success("Candidates exported successfully");
       setExportDialogOpen(false);
     } catch (err) {
@@ -794,13 +1004,20 @@ const CandidatesPage: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-11 h-11 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-xl flex items-center justify-center shrink-0">
-              <Users className="w-6 h-6 stroke-[2px]" />
+              {isFtap ? (
+                <GraduationCap className="w-6 h-6 stroke-[2px]" />
+              ) : (
+                <Users className="w-6 h-6 stroke-[2px]" />
+              )}
             </div>
             <div>
               <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight leading-tight">
-                Candidate
+                {isFtap ? "FTAP Candidates" : "Candidate"}
               </h1>
               <p className="text-[13px] font-medium text-slate-500 mt-0.5 max-w-sm truncate">
+                {isFtap && (
+                  <span className="mr-1">Future Talent Acceleration Program ·</span>
+                )}
                 {totalItems} active records synced
                 {isFetching && (
                   <span className="ml-2 animate-pulse text-orange-500">
@@ -854,7 +1071,11 @@ const CandidatesPage: React.FC = () => {
                 <div className="relative w-full group">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                   <Input
-                    placeholder="Search by name, code..."
+                    placeholder={
+                      isFtap
+                        ? "Nama, email, no. HP, atau nomor KTP..."
+                        : "Search by name, email, phone, KTP..."
+                    }
                     className="pl-10 h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -1099,9 +1320,10 @@ const CandidatesPage: React.FC = () => {
                 </Select>
               </div>
 
+              {/* ---- AI Screening CV (skor 0-100) ---- */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  AI Screening
+                  AI CV Screening
                 </label>
                 <Select value={aiStatus} onValueChange={setAiStatus}>
                   <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
@@ -1119,7 +1341,7 @@ const CandidatesPage: React.FC = () => {
 
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Skor AI (Min - Max)
+                  Skor AI CV (Min - Max)
                 </label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -1146,18 +1368,81 @@ const CandidatesPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* ---- AI Interview (skor 1-10) ---- */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Urutkan Skor AI
+                  AI Interview
+                </label>
+                <Select value={interviewStatus} onValueChange={setInterviewStatus}>
+                  <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                    <SelectValue placeholder="Semua" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua</SelectItem>
+                    <SelectItem value="interviewed">Sudah ada skor</SelectItem>
+                    <SelectItem value="none">Belum diundang</SelectItem>
+                    <SelectItem value="pending">Diundang / berlangsung</SelectItem>
+                    <SelectItem value="failed">Gagal</SelectItem>
+                    <SelectItem value="expired">Undangan kedaluwarsa</SelectItem>
+                    <SelectItem value="cancelled">Dibatalkan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Skor AI Interview (Min - Max)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step="0.5"
+                    placeholder="1"
+                    className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                    value={interviewScoreMin}
+                    onChange={(e) => setInterviewScoreMin(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                  />
+                  <span className="text-slate-400 text-sm">-</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    step="0.5"
+                    placeholder="10"
+                    className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                    value={interviewScoreMax}
+                    onChange={(e) => setInterviewScoreMax(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                  />
+                </div>
+              </div>
+
+              {/* Satu dropdown urutan: hanya satu kunci sort yang bisa aktif sekaligus */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Urutkan
                 </label>
                 <Select value={aiSort} onValueChange={setAiSort}>
                   <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
                     <SelectValue placeholder="Default" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Default</SelectItem>
-                    <SelectItem value="desc">Skor tertinggi dulu</SelectItem>
-                    <SelectItem value="asc">Skor terendah dulu</SelectItem>
+                    <SelectItem value="none">Default (terbaru)</SelectItem>
+                    <SelectItem value="desc">Skor AI CV tertinggi dulu</SelectItem>
+                    <SelectItem value="asc">Skor AI CV terendah dulu</SelectItem>
+                    <SelectItem value="interview_desc">Skor AI Interview tertinggi dulu</SelectItem>
+                    <SelectItem value="interview_asc">Skor AI Interview terendah dulu</SelectItem>
+                    {isFtap && (
+                      <>
+                        <SelectItem value="toefl_desc">TOEFL tertinggi dulu</SelectItem>
+                        <SelectItem value="toefl_asc">TOEFL terendah dulu</SelectItem>
+                        <SelectItem value="graduation_desc">Lulus terbaru dulu</SelectItem>
+                        <SelectItem value="graduation_asc">Lulus terlama dulu</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -1177,6 +1462,206 @@ const CandidatesPage: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {isFtap && (
+                <>
+                  <div className="sm:col-span-2 md:col-span-4 flex items-center gap-3 pt-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-orange-600 dark:text-orange-400">
+                      Filter FTAP
+                    </span>
+                    <div className="h-px flex-1 bg-orange-200/70 dark:bg-orange-500/20" />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Departemen FTAP
+                    </label>
+                    <MultiSelect
+                      options={ftapDepartmentOptions}
+                      selected={ftapDepartment}
+                      onChange={setFtapDepartment}
+                      placeholder="Semua departemen"
+                      maxCount={2}
+                      className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Nomor KTP
+                    </label>
+                    <div className="relative w-full group">
+                      <IdCard className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                      <Input
+                        inputMode="numeric"
+                        placeholder="16 digit nomor KTP..."
+                        className="pl-10 h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                        value={ktpNumber}
+                        onChange={(e) => setKtpNumber(e.target.value.replace(/\D+/g, "").slice(0, 16))}
+                        onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Jenis Tes Inggris
+                    </label>
+                    <Select value={toeflType} onValueChange={setToeflType}>
+                      <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                        <SelectValue placeholder="Semua jenis" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua jenis</SelectItem>
+                        {FTAP_TOEFL_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.label} (lolos ≥ {t.minPass})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Skor TOEFL/IELTS (Min - Max)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min={0}
+                        placeholder={getToeflType(toeflType) ? String(getToeflType(toeflType)!.minPass) : "Min"}
+                        className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                        value={toeflMin}
+                        onChange={(e) => setToeflMin(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                      />
+                      <span className="text-slate-400 text-sm">-</span>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min={0}
+                        placeholder={getToeflType(toeflType) ? String(getToeflType(toeflType)!.scaleMax) : "Max"}
+                        className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                        value={toeflMax}
+                        onChange={(e) => setToeflMax(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Syarat TOEFL
+                    </label>
+                    <Select value={toeflPassed} onValueChange={setToeflPassed}>
+                      <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                        <SelectValue placeholder="Semua" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua</SelectItem>
+                        <SelectItem value="1">Memenuhi (ITP 500 / iBT 60 / IELTS 5.5)</SelectItem>
+                        <SelectItem value="0">Belum memenuhi</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Tempat Interview Offline
+                    </label>
+                    <MultiSelect
+                      options={ftapLocationOptions}
+                      selected={interviewLocation}
+                      onChange={setInterviewLocation}
+                      placeholder="Semua lokasi"
+                      maxCount={2}
+                      className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Tanggal Lulus (Dari - Sampai)
+                    </label>
+                    {/* Popover + Calendar shadcn, pola yang sama dengan filter Start/End Date di atas */}
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full min-w-0 justify-start text-left font-normal h-10 px-3 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20",
+                              !graduationFrom && "text-slate-500 dark:text-slate-400",
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                            {graduationFrom ? (
+                              <span className="truncate">{format(new Date(graduationFrom + "T00:00:00"), "dd MMM yyyy")}</span>
+                            ) : (
+                              <span className="truncate">Lulus dari</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            captionLayout="dropdown"
+                            startMonth={new Date(new Date().getFullYear() - 15, 0)}
+                            endMonth={new Date(new Date().getFullYear() + 2, 11)}
+                            selected={
+                              graduationFrom
+                                ? new Date(graduationFrom + "T00:00:00")
+                                : undefined
+                            }
+                            onSelect={(date) =>
+                              setGraduationFrom(date ? format(date, "yyyy-MM-dd") : "")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <span className="text-slate-400 text-sm">-</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full min-w-0 justify-start text-left font-normal h-10 px-3 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 transition-all focus-visible:ring-2 focus-visible:ring-orange-500/20",
+                              !graduationTo && "text-slate-500 dark:text-slate-400",
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                            {graduationTo ? (
+                              <span className="truncate">{format(new Date(graduationTo + "T00:00:00"), "dd MMM yyyy")}</span>
+                            ) : (
+                              <span className="truncate">Lulus sampai</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            captionLayout="dropdown"
+                            startMonth={new Date(new Date().getFullYear() - 15, 0)}
+                            endMonth={new Date(new Date().getFullYear() + 2, 11)}
+                            selected={
+                              graduationTo
+                                ? new Date(graduationTo + "T00:00:00")
+                                : undefined
+                            }
+                            onSelect={(date) =>
+                              setGraduationTo(date ? format(date, "yyyy-MM-dd") : "")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -1271,19 +1756,28 @@ const CandidatesPage: React.FC = () => {
                 <th className="px-6 py-4">Demographics</th>
                 <th className="px-6 py-4">Address</th>
                 <th className="px-6 py-4">Education Background</th>
+                {isFtap && (
+                  <>
+                    <th className="px-6 py-4">TOEFL / IELTS</th>
+                    <th className="px-6 py-4">Tanggal Lulus</th>
+                    <th className="px-6 py-4">Tempat Interview</th>
+                    <th className="px-6 py-4">No. KTP</th>
+                  </>
+                )}
                 <th className="px-6 py-4">Applied Job</th>
                 <th className="px-6 py-4">Status Apply</th>
                 <th className="px-6 py-4">Tanggal Daftar</th>
                 <th className="px-6 py-4">Checked</th>
                 <th className="px-6 py-4">Lolos Seleksi</th>
-                <th className="px-6 py-4">AI Score</th>
+                <th className="px-6 py-4">AI CV Score</th>
+                <th className="px-6 py-4">AI Interview Score</th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={14}>
+                  <td colSpan={isFtap ? 19 : 15}>
                     <div className="flex flex-col items-center justify-center gap-4 py-24">
                       <Activity className="w-8 h-8 text-orange-500 animate-pulse" />
                       <p className="text-sm font-semibold text-slate-400 tracking-wider uppercase">
@@ -1294,7 +1788,7 @@ const CandidatesPage: React.FC = () => {
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={14}>
+                  <td colSpan={isFtap ? 19 : 15}>
                     <div className="flex flex-col items-center justify-center gap-3 py-24">
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
                         <Search className="w-8 h-8 text-slate-300" />
@@ -1337,7 +1831,7 @@ const CandidatesPage: React.FC = () => {
                         <div
                           className="flex items-center gap-3 hover:cursor-pointer"
                           onClick={() =>
-                            navigate(`/admin/candidates/${candidate.CanId}`)
+                            navigate(`/admin/candidates/${candidate.CanId}`, { state: navState })
                           }
                         >
                           <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -1409,6 +1903,16 @@ const CandidatesPage: React.FC = () => {
                             >
                               {candidate.CanHandphone || "-"}
                             </span>
+                            {isFtap &&
+                              candidate.ftap?.whatsapp_number &&
+                              candidate.ftap.whatsapp_number !== candidate.CanHandphone && (
+                                <span
+                                  className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0"
+                                  title={`WhatsApp: ${candidate.ftap.whatsapp_number}`}
+                                >
+                                  WA {candidate.ftap.whatsapp_number}
+                                </span>
+                              )}
                             {candidate.CanHandphone && (
                               <button
                                 type="button"
@@ -1487,6 +1991,95 @@ const CandidatesPage: React.FC = () => {
                           </span>
                         )}
                       </td>
+                      {isFtap && (
+                        <>
+                          {/* TOEFL / IELTS: jenis + skor + status memenuhi ambang FTAP */}
+                          <td className="px-6 py-4">
+                            {candidate.ftap?.toefl_score !== null &&
+                            candidate.ftap?.toefl_score !== undefined ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+                                  {getToeflType(candidate.ftap.toefl_type)?.label ||
+                                    candidate.ftap.toefl_type ||
+                                    "TOEFL"}{" "}
+                                  <span className="text-orange-600 dark:text-orange-400">
+                                    {formatToeflScore(candidate.ftap.toefl_score)}
+                                  </span>
+                                </span>
+                                {candidate.ftap.toefl_passed === true ? (
+                                  <Badge className="h-5 px-1.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700 border-transparent dark:bg-emerald-500/15 dark:text-emerald-300">
+                                    Memenuhi syarat
+                                  </Badge>
+                                ) : candidate.ftap.toefl_passed === false ? (
+                                  <Badge className="h-5 px-1.5 text-[10px] font-semibold bg-rose-100 text-rose-700 border-transparent dark:bg-rose-500/15 dark:text-rose-300">
+                                    Di bawah ambang
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="text-sm font-medium text-slate-400 italic">No Data</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            {(() => {
+                              const lastEdu =
+                                candidate.education?.find((e) => e.FgLastEdu === "Y") ||
+                                candidate.education?.[0];
+                              const value =
+                                candidate.ftap?.graduation_date ||
+                                lastEdu?.EduGraduate ||
+                                lastEdu?.EduPeriodEnd ||
+                                null;
+                              return value ? (
+                                <span className="flex items-center gap-2 text-[13px] font-medium text-slate-700 dark:text-slate-200">
+                                  <GraduationCap className="w-4 h-4 text-orange-400 shrink-0" />
+                                  {/^\d{4}$/.test(String(value)) ? value : formatShortDate(String(value))}
+                                </span>
+                              ) : (
+                                <span className="text-sm font-medium text-slate-400 italic">No Data</span>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-6 py-4">
+                            {candidate.ftap?.interview_location ? (
+                              <span
+                                className="flex items-center gap-2 text-[13px] font-medium text-slate-700 dark:text-slate-200"
+                                title={`${candidate.ftap.interview_location} (tidak dapat diganti)`}
+                              >
+                                <MapPin className="w-4 h-4 text-orange-400 shrink-0" />
+                                {candidate.ftap.interview_location.replace(/^Recruitment FTAP\s*-\s*/i, "")}
+                              </span>
+                            ) : (
+                              <span className="text-sm font-medium text-slate-400 italic">No Data</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            {getKtpNumber(candidate) ? (
+                              <span className="group/copy flex items-center gap-2 text-[13px] font-mono font-medium text-slate-700 dark:text-slate-200">
+                                <IdCard className="w-4 h-4 text-slate-400 shrink-0" />
+                                {getKtpNumber(candidate)}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopy(getKtpNumber(candidate), `ktp-${candidate.CanId}`, "No. KTP");
+                                  }}
+                                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-orange-500 transition-colors shrink-0"
+                                  title="Copy no. KTP"
+                                >
+                                  {copiedKey === `ktp-${candidate.CanId}` ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </span>
+                            ) : (
+                              <span className="text-sm font-medium text-slate-400 italic">No Data</span>
+                            )}
+                          </td>
+                        </>
+                      )}
                       <td className="px-6 py-4">
                         {(() => {
                           const primaryJob = getPrimaryExpectedJob(candidate);
@@ -1674,35 +2267,29 @@ const CandidatesPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1.5 items-start">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-14 text-[10px] font-semibold uppercase tracking-wider text-slate-400">CV</span>
-                            <AiScoreChip
-                              latest={candidate.latest_ai_screening}
-                              latestDone={candidate.latest_done_ai_screening}
-                              onClick={() =>
-                                navigate(`/admin/candidates/${candidate.CanId}`)
-                              }
-                            />
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-14 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Interview</span>
-                            <InterviewScoreChip
-                              latest={candidate.latest_ai_interview}
-                              latestCompleted={candidate.latest_completed_ai_interview}
-                              onClick={() =>
-                                navigate(`/admin/candidates/${candidate.CanId}#ai-interview`)
-                              }
-                            />
-                          </div>
-                        </div>
+                        <AiScoreChip
+                          latest={candidate.latest_ai_screening}
+                          latestDone={candidate.latest_done_ai_screening}
+                          onClick={() =>
+                            navigate(`/admin/candidates/${candidate.CanId}`, { state: navState })
+                          }
+                        />
+                      </td>
+                      <td className="px-6 py-4">
+                        <InterviewScoreChip
+                          latest={candidate.latest_ai_interview}
+                          latestCompleted={candidate.latest_completed_ai_interview}
+                          onClick={() =>
+                            navigate(`/admin/candidates/${candidate.CanId}#ai-interview`, { state: navState })
+                          }
+                        />
                       </td>
                       <td className="px-6 py-4 text-right flex gap-2 justify-end">
                         <Button
                           size="sm"
                           className="h-9 px-4 rounded-xl font-medium bg-white text-slate-700 border border-slate-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 shadow-sm transition-all"
                           onClick={() =>
-                            navigate(`/admin/candidates/${candidate.CanId}`)
+                            navigate(`/admin/candidates/${candidate.CanId}`, { state: navState })
                           }
                         >
                           <Eye className="w-4 h-4 mr-2" /> Details
@@ -1873,10 +2460,47 @@ const CandidatesPage: React.FC = () => {
               Export Candidates
             </DialogTitle>
             <DialogDescription>
-              Pilih bulan untuk mengekspor data kandidat. Data yang diekspor
-              mencakup satu bulan penuh (maksimal rentang 1 bulan).
+              Export hasil filter yang sedang aktif (tanpa batasan tanggal), atau
+              pilih satu bulan penuh berdasarkan tanggal daftar.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Opsi 1: export persis hasil filter/sourcing yang tampil di layar */}
+          <div className="rounded-xl border border-orange-200 dark:border-orange-900/60 bg-orange-50/60 dark:bg-orange-950/20 p-4 flex flex-col gap-3">
+            <div className="flex items-start gap-3">
+              <Filter className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold text-slate-800 dark:text-slate-100">
+                  Export hasil filter aktif
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {activeFilterCount > 0
+                    ? `${activeFilterCount} filter aktif · ${totalItems} kandidat akan diexport.`
+                    : isFtap
+                      ? `Tanpa filter · seluruh ${totalItems} kandidat FTAP akan diexport.`
+                      : `Belum ada filter aktif · seluruh ${totalItems} kandidat akan diexport.`}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleExportFiltered}
+              disabled={loadingExport || totalItems === 0}
+              className="bg-orange-500 hover:bg-orange-600 text-white w-full"
+            >
+              {loadingExport ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
+              Export {totalItems} kandidat sesuai filter
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+            <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+            atau per bulan
+            <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+          </div>
 
           {(() => {
             // exportMonth is "yyyy-MM"; split into year & month index (0-based).
@@ -2000,7 +2624,7 @@ const CandidatesPage: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <Download className="w-4 h-4 mr-2" /> Export
+                  <Download className="w-4 h-4 mr-2" /> Export bulan ini
                 </>
               )}
             </Button>
