@@ -18,18 +18,25 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   deleteCandidateDocument,
   downloadCandidateDocument,
   getCandidateById,
+  getCandidates,
   postApplyToSqlServer,
   previewCandidateDocument,
   previewCandidatePhoto,
+  toggleCandidateChecklist,
+  toggleCandidatePassed,
   uploadCandidateDocuments,
   uploadCandidatePhoto,
   type CandidateDetailResponse,
+  type CandidateFilters,
   type UpdateCandidateResponse,
 } from "@/lib/api/candidates";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +48,8 @@ import {
   BriefcaseBusiness,
   Building2,
   Camera,
+  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CreditCard,
   Download,
@@ -62,12 +71,18 @@ import {
   ScanSearch,
   Share2,
   Trash2,
+  Trophy,
   Upload,
   User,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import {
+  FTAP_INTERVIEW_LOCATION_NOTE,
+  formatToeflScore,
+  getToeflType,
+} from "@/lib/constants/ftap";
 
 // --- Formatter Helpers ---
 const formatGender = (value?: string | null) => {
@@ -82,6 +97,30 @@ const formatDate = (value?: string | null) => {
   const normalized = value.replace("T", " ");
   return normalized.split(" ")[0] || value;
 };
+
+// Umur dari tanggal lahir, dihitung saat halaman dirender (tahun penuh, dikoreksi bulan/hari).
+const calculateAge = (value?: string | null): number | null => {
+  if (!value) return null;
+  const dob = new Date(formatDate(value) + "T00:00:00");
+  if (Number.isNaN(dob.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const beforeBirthday =
+    today.getMonth() < dob.getMonth() ||
+    (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate());
+  if (beforeBirthday) age -= 1;
+  return age >= 0 && age < 120 ? age : null;
+};
+
+/** Konteks navigasi yang dikirim CandidatesPage lewat location.state saat membuka detail. */
+interface ListNavState {
+  from?: string;
+  ids?: number[];
+  page?: number;
+  totalPages?: number;
+  filters?: CandidateFilters;
+  storagePrefix?: string;
+}
 
 const formatCurrency = (value?: string | number | null) => {
   if (value === null || value === undefined || value === "") return "-";
@@ -236,6 +275,166 @@ const CandidateDetailPage: React.FC = () => {
   }, [error]);
 
   const candidate = data?.success ? data.data : null;
+
+  // Tujuan tombol Back: list asal (dikirim lewat location.state.from oleh CandidatesPage);
+  // bila dibuka langsung lewat URL, kandidat FTAP kembali ke list FTAP, lainnya ke list umum.
+  const location = useLocation();
+  const navState = (location.state as ListNavState | null) ?? null;
+  const originList = navState?.from;
+  const isFromFtap = originList ? originList === "ftap" : Boolean(candidate?.ftap);
+  const backPath = isFromFtap ? "/admin/candidates/ftap" : "/admin/candidates";
+  const backLabel = isFromFtap ? "Back to FTAP Candidates" : "Back to Candidates";
+
+  // ---- Prev / Next kandidat mengikuti urutan & filter list asal ----
+  const currentId = Number(id);
+  const navIds = navState?.ids ?? [];
+  const navIndex = navIds.indexOf(currentId);
+  const navPage = navState?.page ?? 1;
+  const navTotalPages = navState?.totalPages ?? 1;
+  const hasNavContext = navIndex !== -1;
+  const hasPrev = hasNavContext && (navIndex > 0 || navPage > 1);
+  const hasNext =
+    hasNavContext && (navIndex < navIds.length - 1 || navPage < navTotalPages);
+  const [isNavigating, setIsNavigating] = useState<"prev" | "next" | null>(null);
+
+  const goToSibling = async (direction: "prev" | "next") => {
+    if (!navState || !hasNavContext || isNavigating) return;
+    setIsNavigating(direction);
+    try {
+      let targetId: number | undefined;
+      let nextState: ListNavState = navState;
+
+      if (direction === "prev" && navIndex > 0) {
+        targetId = navIds[navIndex - 1];
+      } else if (direction === "next" && navIndex < navIds.length - 1) {
+        targetId = navIds[navIndex + 1];
+      } else {
+        // Ujung halaman: ambil halaman list sebelum/berikutnya dengan filter yang sama.
+        const targetPage = direction === "prev" ? navPage - 1 : navPage + 1;
+        const res = await getCandidates({ ...(navState.filters ?? {}), page: targetPage });
+        const rows = res.success ? res.data?.data ?? [] : [];
+        const ids = rows.map((c) => Number(c.CanId));
+        if (ids.length === 0) {
+          toast.info("Tidak ada kandidat lain pada arah tersebut.");
+          return;
+        }
+        targetId = direction === "prev" ? ids[ids.length - 1] : ids[0];
+        nextState = {
+          ...navState,
+          ids,
+          page: targetPage,
+          totalPages: Math.max(1, res.data?.last_page || navTotalPages),
+        };
+        // Sinkronkan halaman list yang tersimpan agar tombol Back mendarat di halaman yang sama.
+        if (navState.storagePrefix) {
+          try {
+            sessionStorage.setItem(`${navState.storagePrefix}_page`, JSON.stringify(targetPage));
+          } catch {
+            /* sessionStorage tidak tersedia; abaikan */
+          }
+        }
+      }
+
+      if (targetId !== undefined) {
+        navigate(`/admin/candidates/${targetId}`, { state: nextState });
+      }
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e?.response?.data?.message || "Gagal memuat kandidat berikutnya");
+    } finally {
+      setIsNavigating(null);
+    }
+  };
+
+  // ---- Checked & Lolos Seleksi dari halaman detail (logika sama dengan list) ----
+  const [isTogglingChecked, setIsTogglingChecked] = useState(false);
+  const [isTogglingPassed, setIsTogglingPassed] = useState(false);
+  const [isPassedDialogOpen, setIsPassedDialogOpen] = useState(false);
+  const [passedNoteInput, setPassedNoteInput] = useState("");
+
+  const patchDetailCache = (patch: Partial<CandidateDetailResponse["data"]>) => {
+    queryClient.setQueryData<CandidateDetailResponse>(detailQueryKey, (previous) =>
+      previous
+        ? { ...previous, data: { ...previous.data, ...patch } }
+        : previous,
+    );
+    queryClient.invalidateQueries({ queryKey: ["candidates"] });
+  };
+
+  const handleToggleChecked = async () => {
+    if (!candidate || isTogglingChecked) return;
+    setIsTogglingChecked(true);
+    try {
+      const res = await toggleCandidateChecklist(candidate.CanId);
+      if (res.success) {
+        toast.success(res.message);
+        patchDetailCache({
+          is_checked: res.data.is_checked,
+          checked_at: res.data.checked_at,
+          checked_by: res.data.checked_by,
+        });
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      const e = err as { response?: { data?: { message?: string } } };
+      toast.error(e?.response?.data?.message || "Failed to update checklist");
+    } finally {
+      setIsTogglingChecked(false);
+    }
+  };
+
+  const callTogglePassed = async (note?: string) => {
+    if (!candidate) return;
+    setIsTogglingPassed(true);
+    try {
+      const res = await toggleCandidatePassed(candidate.CanId, note);
+      if (res.success) {
+        toast.success(res.message);
+        patchDetailCache({
+          is_passed: res.data.is_passed,
+          passed_at: res.data.passed_at,
+          passed_by: res.data.passed_by,
+          passed_note: res.data.passed_note,
+        });
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      const e = err as {
+        response?: { data?: { message?: string; errors?: { note?: string[] } } };
+      };
+      toast.error(
+        e?.response?.data?.message ||
+          e?.response?.data?.errors?.note?.[0] ||
+          "Failed to update selection-passed status",
+      );
+    } finally {
+      setIsTogglingPassed(false);
+    }
+  };
+
+  const handlePassedClick = () => {
+    if (!candidate) return;
+    if (candidate.is_passed) {
+      const ok = window.confirm(
+        `Cabut tanda lolos untuk "${candidate.CanName}"? Catatan yang tersimpan akan ikut terhapus.`,
+      );
+      if (!ok) return;
+      callTogglePassed();
+    } else {
+      setPassedNoteInput("");
+      setIsPassedDialogOpen(true);
+    }
+  };
+
+  const handleConfirmMarkPassed = async () => {
+    const note = passedNoteInput;
+    setIsPassedDialogOpen(false);
+    setPassedNoteInput("");
+    await callTogglePassed(note);
+  };
+
   const mainAddress = candidate?.addresses?.[0];
   const education = candidate?.education || [];
   const experiences =
@@ -569,7 +768,7 @@ const CandidateDetailPage: React.FC = () => {
         <p className="text-slate-500 max-w-sm">
           The candidate data may have been removed or the ID is invalid.
         </p>
-        <Button className="mt-4" onClick={() => navigate("/admin/candidates")}>
+        <Button className="mt-4" onClick={() => navigate(backPath)}>
           Return to List
         </Button>
       </div>
@@ -582,15 +781,108 @@ const CandidateDetailPage: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 pt-6 pb-8">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Top Navbar items */}
-          <div className="flex justify-between items-center mb-8">
-            <Button
-              variant="ghost"
-              onClick={() => navigate("/admin/candidates")}
-              className="text-slate-500 hover:text-slate-900 dark:hover:text-white -ml-4"
-            >
-              <ArrowLeft className="w-4 h-4 mr-2" /> Back to Dashboard
-            </Button>
-            <div className="flex gap-2">
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-8">
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                onClick={() => navigate(backPath)}
+                className="text-slate-500 hover:text-slate-900 dark:hover:text-white -ml-4"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" /> {backLabel}
+              </Button>
+              {/* Prev/Next mengikuti urutan & filter list asal; nonaktif bila detail dibuka langsung lewat URL */}
+              <div
+                className="flex items-center rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden"
+                title={
+                  hasNavContext
+                    ? `Kandidat ${navIndex + 1} dari ${navIds.length} di halaman ${navPage}/${navTotalPages}`
+                    : "Buka kandidat dari daftar untuk navigasi sebelum/berikutnya"
+                }
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 rounded-none border-r border-slate-200 dark:border-slate-700"
+                  disabled={!hasPrev || isNavigating !== null}
+                  onClick={() => goToSibling("prev")}
+                  aria-label="Kandidat sebelumnya"
+                >
+                  {isNavigating === "prev" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ChevronLeft className="w-4 h-4" />
+                  )}
+                </Button>
+                {hasNavContext && (
+                  <span className="px-2 text-[11px] font-medium text-slate-500 tabular-nums">
+                    {navIndex + 1}/{navIds.length}
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 rounded-none border-l border-slate-200 dark:border-slate-700"
+                  disabled={!hasNext || isNavigating !== null}
+                  onClick={() => goToSibling("next")}
+                  aria-label="Kandidat berikutnya"
+                >
+                  {isNavigating === "next" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {/* Checked: sama dengan kolom Checked di list */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleToggleChecked}
+                disabled={isTogglingChecked}
+                className={
+                  candidate.is_checked
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+                    : "border-slate-200 dark:border-slate-700"
+                }
+                title={
+                  candidate.is_checked && candidate.checked_by
+                    ? `Dicek oleh ${candidate.checked_by}${candidate.checked_at ? ` · ${formatDate(candidate.checked_at)}` : ""}`
+                    : "Tandai kandidat sudah dicek"
+                }
+              >
+                {isTogglingChecked ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                )}
+                {candidate.is_checked ? "Checked" : "Tandai Checked"}
+              </Button>
+              {/* Lolos seleksi: sama dengan kolom Lolos Seleksi di list */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePassedClick}
+                disabled={isTogglingPassed}
+                className={
+                  candidate.is_passed
+                    ? "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/30 dark:text-orange-300"
+                    : "border-slate-200 dark:border-slate-700"
+                }
+                title={
+                  candidate.is_passed
+                    ? `Lolos seleksi${candidate.passed_by ? ` · ${candidate.passed_by}` : ""}${candidate.passed_note ? ` · ${candidate.passed_note}` : ""}`
+                    : "Tandai kandidat lolos seleksi"
+                }
+              >
+                {isTogglingPassed ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Trophy className="w-4 h-4 mr-2" />
+                )}
+                {candidate.is_passed ? "Lolos Seleksi" : "Tandai Lolos"}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -745,6 +1037,14 @@ const CandidateDetailPage: React.FC = () => {
                 <InfoRow
                   label="Date of Birth"
                   value={formatDate(candidate.CanDateBirth)}
+                />
+                <InfoRow
+                  label="Age"
+                  value={(() => {
+                    const age = calculateAge(candidate.CanDateBirth);
+                    return age !== null ? `${age} tahun` : null;
+                  })()}
+                  highlight
                 />
                 <InfoRow
                   label="Birth Place"
@@ -935,6 +1235,73 @@ const CandidateDetailPage: React.FC = () => {
 
           {/* Main Column (8 Col Span) */}
           <div className="lg:col-span-8 space-y-6">
+            {/* Program FTAP (mass hiring): data khusus dari form lamaran FTAP */}
+            {candidate.ftap && (
+              <SectionBlock icon={GraduationCap} title="Program FTAP">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                  <div>
+                    <InfoRow
+                      label="Departemen"
+                      value={candidate.ftap.department}
+                      highlight
+                    />
+                    <InfoRow
+                      label="Email"
+                      value={candidate.CanEmail}
+                    />
+                    <InfoRow
+                      label="No. HP (WhatsApp)"
+                      value={candidate.ftap.whatsapp_number || candidate.CanHandphone}
+                    />
+                    <InfoRow
+                      label="Tanggal Kelulusan"
+                      value={formatDate(candidate.ftap.graduation_date)}
+                    />
+                  </div>
+                  <div>
+                    <InfoRow
+                      label="Jenis Tes Inggris"
+                      value={
+                        getToeflType(candidate.ftap.toefl_type)?.label ||
+                        candidate.ftap.toefl_type
+                      }
+                    />
+                    <InfoRow
+                      label="Skor"
+                      value={
+                        candidate.ftap.toefl_score !== null &&
+                        candidate.ftap.toefl_score !== undefined ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="font-semibold">
+                              {formatToeflScore(candidate.ftap.toefl_score)}
+                            </span>
+                            {candidate.ftap.toefl_passed === true ? (
+                              <Badge className="h-5 px-1.5 text-[10px] font-semibold bg-emerald-100 text-emerald-700 border-transparent dark:bg-emerald-500/15 dark:text-emerald-300">
+                                Memenuhi syarat
+                              </Badge>
+                            ) : candidate.ftap.toefl_passed === false ? (
+                              <Badge className="h-5 px-1.5 text-[10px] font-semibold bg-rose-100 text-rose-700 border-transparent dark:bg-rose-500/15 dark:text-rose-300">
+                                Di bawah ambang
+                              </Badge>
+                            ) : null}
+                          </span>
+                        ) : null
+                      }
+                    />
+                    <InfoRow
+                      label="Tempat Interview Offline"
+                      value={candidate.ftap.interview_location}
+                      highlight
+                    />
+                  </div>
+                </div>
+                <p className="mt-4 flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  {FTAP_INTERVIEW_LOCATION_NOTE}
+                </p>
+              </SectionBlock>
+            )}
+
             {/* Applications */}
             {jobExpected.length > 0 && (
               <SectionBlock icon={BriefcaseBusiness} title="Job Applications">
@@ -1344,10 +1711,67 @@ const CandidateDetailPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Dialog catatan saat menandai lolos seleksi (sama dengan di list) */}
+      <Dialog
+        open={isPassedDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setIsPassedDialogOpen(false);
+            setPassedNoteInput("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tandai Lolos Seleksi</DialogTitle>
+            <DialogDescription>
+              Tandai{" "}
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                {candidate.CanName}
+              </span>{" "}
+              sebagai lolos seleksi. Catatan bersifat opsional (maks 1000 karakter).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Catatan (opsional)
+            </label>
+            <Textarea
+              value={passedNoteInput}
+              onChange={(e) => setPassedNoteInput(e.target.value)}
+              placeholder="Contoh: Lolos tahap interview HR, jadwalkan psikotes"
+              maxLength={1000}
+              rows={4}
+            />
+            <span className="text-[11px] text-slate-400 self-end">
+              {passedNoteInput.length} / 1000
+            </span>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsPassedDialogOpen(false);
+                setPassedNoteInput("");
+              }}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={handleConfirmMarkPassed}
+              disabled={isTogglingPassed}
+              className="bg-[#FF6905] hover:bg-[#e35e04] text-white"
+            >
+              Tandai Lolos
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Candidate Modal — di-mount hanya saat dibuka supaya form selalu
           ter-prefill dari data candidate terbaru. */}
       {isEditOpen && (
-        <CandidateEditModal
+      <CandidateEditModal
           candidate={candidate}
           open
           onOpenChange={setIsEditOpen}

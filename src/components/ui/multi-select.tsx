@@ -107,7 +107,9 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            "flex w-full h-10 items-center justify-between gap-2 rounded-md border-0 bg-white dark:bg-slate-900 px-3 py-2 text-sm shadow-none transition-all outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50",
+            // Samakan dengan SelectTrigger/Input shadcn (border + shadow-xs) supaya tidak tampak
+            // berbeda dari field lain di panel filter; className dari pemanggil tetap bisa menimpa.
+            "flex w-full h-10 items-center justify-between gap-2 rounded-md border border-input dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-normal shadow-xs transition-all outline-none focus:ring-2 focus:ring-orange-500/20 disabled:cursor-not-allowed disabled:opacity-50",
             className,
           )}
         >
