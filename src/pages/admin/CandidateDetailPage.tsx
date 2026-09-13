@@ -81,7 +81,9 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   FTAP_INTERVIEW_LOCATION_NOTE,
+  formatHskLevel,
   formatToeflScore,
+  getMandarinLevel,
   getToeflType,
 } from "@/lib/constants/ftap";
 
@@ -469,6 +471,40 @@ const CandidateDetailPage: React.FC = () => {
   const jobExpected = candidate?.job_expected || [];
   const skills = candidate?.skills || [];
   const languages = candidate?.languages || [];
+
+  // FTAP language data (tbl_t_candidate_ftap) lives outside RCECanLang. Surface it in the
+  // Competencies card as read-only badges so FTAP candidates do not show "No languages listed".
+  const ftapLanguages = useMemo(() => {
+    const ftap = candidate?.ftap;
+    if (!ftap) return [];
+    const items: { key: string; label: string; tone: "pass" | "fail" | "neutral" }[] = [];
+
+    if (ftap.toefl_type || (ftap.toefl_score !== null && ftap.toefl_score !== undefined)) {
+      const testLabel = getToeflType(ftap.toefl_type)?.label || ftap.toefl_type || "English";
+      const score =
+        ftap.toefl_score !== null && ftap.toefl_score !== undefined
+          ? ` ${formatToeflScore(ftap.toefl_score)}`
+          : "";
+      items.push({
+        key: "english",
+        label: `English · ${testLabel}${score}`,
+        tone:
+          ftap.toefl_passed === true ? "pass" : ftap.toefl_passed === false ? "fail" : "neutral",
+      });
+    }
+
+    const mandarin = getMandarinLevel(ftap.mandarin_level);
+    if (mandarin && mandarin.value !== "none") {
+      const hsk = formatHskLevel(ftap.hsk_level);
+      items.push({
+        key: "mandarin",
+        label: `Mandarin · ${mandarin.label}${hsk ? ` (${hsk})` : ""}`,
+        tone: "neutral",
+      });
+    }
+
+    return items;
+  }, [candidate?.ftap]);
 
   // Default photo record (FgDefault = 'Y', fallback to the first one).
   const defaultPhoto = useMemo(() => {
@@ -1091,7 +1127,8 @@ const CandidateDetailPage: React.FC = () => {
                 <InfoRow
                   label="Expected Salary"
                   value={formatCurrency(
-                    expectedSalaryFromQuestions ??
+                    candidate.ftap?.expected_salary ??
+                      expectedSalaryFromQuestions ??
                       candidate.experiences?.[0]?.ExpSalary ??
                       candidate.CanExpSal,
                   )}
@@ -1230,7 +1267,7 @@ const CandidateDetailPage: React.FC = () => {
                 <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">
                   Languages
                 </h4>
-                {languages.length === 0 ? (
+                {languages.length === 0 && ftapLanguages.length === 0 ? (
                   <p className="text-sm text-slate-400 italic">
                     No languages listed
                   </p>
@@ -1245,7 +1282,28 @@ const CandidateDetailPage: React.FC = () => {
                         {lang.LangName}
                       </Badge>
                     ))}
+                    {ftapLanguages.map((lang) => (
+                      <Badge
+                        key={`ftap-${lang.key}`}
+                        variant="outline"
+                        title="Dari form lamaran program FTAP"
+                        className={
+                          lang.tone === "pass"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 font-medium"
+                            : lang.tone === "fail"
+                              ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 font-medium"
+                              : "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 font-medium"
+                        }
+                      >
+                        {lang.label}
+                      </Badge>
+                    ))}
                   </div>
+                )}
+                {ftapLanguages.length > 0 && (
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Bahasa dari form lamaran FTAP. Detail skor ada di blok Program FTAP.
+                  </p>
                 )}
               </div>
             </SectionBlock>
@@ -1275,6 +1333,19 @@ const CandidateDetailPage: React.FC = () => {
                       label="Tanggal Kelulusan"
                       value={formatDate(candidate.ftap.graduation_date)}
                     />
+                    <InfoRow
+                      label="Ekspektasi Gaji"
+                      value={
+                        candidate.ftap.expected_salary !== null &&
+                        candidate.ftap.expected_salary !== undefined
+                          ? `${formatCurrency(candidate.ftap.expected_salary)} / bulan`
+                          : null
+                      }
+                    />
+                    <InfoRow
+                      label="Benefit Diharapkan"
+                      value={candidate.ftap.expected_benefit}
+                    />
                   </div>
                   <div>
                     <InfoRow
@@ -1302,6 +1373,24 @@ const CandidateDetailPage: React.FC = () => {
                                 Di bawah ambang
                               </Badge>
                             ) : null}
+                          </span>
+                        ) : null
+                      }
+                    />
+                    <InfoRow
+                      label="Bahasa Mandarin"
+                      value={
+                        candidate.ftap.mandarin_level ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="font-semibold">
+                              {getMandarinLevel(candidate.ftap.mandarin_level)?.label ||
+                                candidate.ftap.mandarin_level}
+                            </span>
+                            {formatHskLevel(candidate.ftap.hsk_level) && (
+                              <Badge className="h-5 px-1.5 text-[10px] font-semibold bg-sky-100 text-sky-700 border-transparent dark:bg-sky-500/15 dark:text-sky-300">
+                                {formatHskLevel(candidate.ftap.hsk_level)}
+                              </Badge>
+                            )}
                           </span>
                         ) : null
                       }

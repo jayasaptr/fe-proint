@@ -49,8 +49,11 @@ import {
 import {
   FTAP_DEPARTMENTS,
   FTAP_INTERVIEW_LOCATIONS,
+  FTAP_MANDARIN_LEVELS,
   FTAP_TOEFL_TYPES,
+  formatHskLevel,
   formatToeflScore,
+  getMandarinLevel,
   getToeflType,
 } from "@/lib/constants/ftap";
 import { bulkScreenCandidates, isScreeningPending } from "@/lib/api/screening";
@@ -296,6 +299,10 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
   const [toeflPassed, setToeflPassed] = useState<string>(() =>
     getSessionState(sk("toeflPassed"), ""),
   );
+  // Bahasa Mandarin: tingkat minimal (none|basic|intermediate|advanced) dikirim sebagai mandarin_level_min.
+  const [mandarinMin, setMandarinMin] = useState<string>(() =>
+    getSessionState(sk("mandarinMin"), ""),
+  );
   const [interviewLocation, setInterviewLocation] = useState<string[]>(() => {
     const val = getSessionState(sk("interviewLocation"), []);
     return Array.isArray(val) ? val : [];
@@ -340,6 +347,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
     toeflMin: "",
     toeflMax: "",
     toeflPassed: "",
+    mandarinMin: "",
     interviewLocation: [] as string[],
     ktpNumber: "",
     graduationFrom: "",
@@ -400,6 +408,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
     sessionStorage.setItem(sk("toeflMin"), JSON.stringify(toeflMin));
     sessionStorage.setItem(sk("toeflMax"), JSON.stringify(toeflMax));
     sessionStorage.setItem(sk("toeflPassed"), JSON.stringify(toeflPassed));
+    sessionStorage.setItem(sk("mandarinMin"), JSON.stringify(mandarinMin));
     sessionStorage.setItem(sk("interviewLocation"), JSON.stringify(interviewLocation));
     sessionStorage.setItem(sk("ktpNumber"), JSON.stringify(ktpNumber));
     sessionStorage.setItem(sk("graduationFrom"), JSON.stringify(graduationFrom));
@@ -436,6 +445,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
     toeflMin,
     toeflMax,
     toeflPassed,
+    mandarinMin,
     interviewLocation,
     ktpNumber,
     graduationFrom,
@@ -471,6 +481,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
       toeflMin,
       toeflMax,
       toeflPassed,
+      mandarinMin,
       interviewLocation,
       ktpNumber,
       graduationFrom,
@@ -505,6 +516,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
     setToeflMin("");
     setToeflMax("");
     setToeflPassed("");
+    setMandarinMin("");
     setInterviewLocation([]);
     setKtpNumber("");
     setGraduationFrom("");
@@ -685,6 +697,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
       ...(f.toeflMin !== "" && { toefl_score_min: f.toeflMin }),
       ...(f.toeflMax !== "" && { toefl_score_max: f.toeflMax }),
       ...(f.toeflPassed && f.toeflPassed !== "all" && { toefl_passed: f.toeflPassed }),
+      ...(f.mandarinMin && f.mandarinMin !== "all" && { mandarin_level_min: f.mandarinMin }),
       ...(f.interviewLocation?.length > 0 && { interview_location: f.interviewLocation }),
       ...(f.ktpNumber?.trim() && { ktp_number: f.ktpNumber.trim() }),
       ...(f.graduationFrom && { graduation_from: f.graduationFrom }),
@@ -1569,6 +1582,25 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
 
                   <div className="flex flex-col gap-2">
                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Bahasa Mandarin (Minimal)
+                    </label>
+                    <Select value={mandarinMin} onValueChange={setMandarinMin}>
+                      <SelectTrigger className="h-10 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 w-full transition-all focus:ring-2 focus:ring-orange-500/20">
+                        <SelectValue placeholder="Semua" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua</SelectItem>
+                        {FTAP_MANDARIN_LEVELS.filter((l) => l.rank > 0).map((l) => (
+                          <SelectItem key={l.value} value={l.value}>
+                            Minimal {l.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                       Tempat Interview Offline
                     </label>
                     <MultiSelect
@@ -1759,6 +1791,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
                 {isFtap && (
                   <>
                     <th className="px-6 py-4">TOEFL / IELTS</th>
+                    <th className="px-6 py-4">Bahasa Mandarin</th>
                     <th className="px-6 py-4">Tanggal Lulus</th>
                     <th className="px-6 py-4">Tempat Interview</th>
                     <th className="px-6 py-4">No. KTP</th>
@@ -1777,7 +1810,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
               {isLoading ? (
                 <tr>
-                  <td colSpan={isFtap ? 19 : 15}>
+                  <td colSpan={isFtap ? 20 : 15}>
                     <div className="flex flex-col items-center justify-center gap-4 py-24">
                       <Activity className="w-8 h-8 text-orange-500 animate-pulse" />
                       <p className="text-sm font-semibold text-slate-400 tracking-wider uppercase">
@@ -1788,7 +1821,7 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
                 </tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={isFtap ? 19 : 15}>
+                  <td colSpan={isFtap ? 20 : 15}>
                     <div className="flex flex-col items-center justify-center gap-3 py-24">
                       <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-2">
                         <Search className="w-8 h-8 text-slate-300" />
@@ -2015,6 +2048,31 @@ const CandidatesPage: React.FC<CandidatesPageProps> = ({ variant = "general" }) 
                                     Di bawah ambang
                                   </Badge>
                                 ) : null}
+                              </div>
+                            ) : (
+                              <span className="text-sm font-medium text-slate-400 italic">No Data</span>
+                            )}
+                          </td>
+                          {/* Bahasa Mandarin: tingkat kemampuan + level HSK (nilai tambah, bukan syarat) */}
+                          <td className="px-6 py-4">
+                            {candidate.ftap?.mandarin_level ? (
+                              <div className="flex flex-col items-start gap-1">
+                                <span
+                                  className={cn(
+                                    "text-[13px] font-semibold",
+                                    candidate.ftap.mandarin_level === "none"
+                                      ? "text-slate-400 dark:text-slate-500"
+                                      : "text-slate-800 dark:text-slate-100",
+                                  )}
+                                >
+                                  {getMandarinLevel(candidate.ftap.mandarin_level)?.label ||
+                                    candidate.ftap.mandarin_level}
+                                </span>
+                                {formatHskLevel(candidate.ftap.hsk_level) && (
+                                  <Badge className="h-5 px-1.5 text-[10px] font-semibold bg-sky-100 text-sky-700 border-transparent dark:bg-sky-500/15 dark:text-sky-300">
+                                    {formatHskLevel(candidate.ftap.hsk_level)}
+                                  </Badge>
+                                )}
                               </div>
                             ) : (
                               <span className="text-sm font-medium text-slate-400 italic">No Data</span>

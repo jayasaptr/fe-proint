@@ -312,6 +312,10 @@ export interface CandidateFtap {
   toefl_type?: string | null; // ITP | iBT | IELTS
   toefl_score?: number | string | null;
   toefl_passed?: boolean | null;
+  mandarin_level?: string | null; // none | basic | intermediate | advanced
+  hsk_level?: number | null; // 1-6, hanya bila mandarin_level != none
+  expected_salary?: number | string | null; // rupiah per bulan
+  expected_benefit?: string | null;
   graduation_date?: string | null; // Y-m-d
   interview_location?: string | null;
   createdAt?: string | null;
@@ -338,6 +342,8 @@ export interface FtapOptions {
     scale_min: number;
     scale_max: number;
   }[];
+  mandarin_levels?: { value: string; label: string; hint: string; rank: number }[];
+  hsk_levels?: number[];
   vacancies: FtapVacancyOption[];
 }
 
@@ -476,6 +482,9 @@ export interface CandidateFilters {
   toefl_score_min?: string | number;
   toefl_score_max?: string | number;
   toefl_passed?: 0 | 1 | boolean | string;
+  mandarin_level?: string | string[];
+  mandarin_level_min?: string;
+  hsk_level_min?: string | number;
   interview_location?: string | string[];
   graduation_from?: string;
   graduation_to?: string;

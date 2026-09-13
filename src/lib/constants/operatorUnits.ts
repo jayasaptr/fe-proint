@@ -1,3 +1,5 @@
+import { FTAP_REQUIRED_DOCUMENTS } from "@/lib/constants/ftap";
+
 export interface OperatorUnitGroup {
   category: string;
   units: string[];
@@ -79,13 +81,17 @@ export const DOCUMENT_FULL_NAMES: Record<string, string> = {
 };
 
 /**
- * Dokumen wajib berdasarkan level lowongan. Operator dan Mechanic punya
- * daftar berkas wajib yang berbeda; level lain tidak mewajibkan apa pun.
+ * Dokumen wajib berdasarkan level/program lowongan. FTAP punya paket dokumen
+ * lengkap sendiri (lihat FTAP_REQUIRED_DOCUMENTS) dan menang atas level lain;
+ * Operator dan Mechanic punya daftar berkas wajib yang berbeda; level lain
+ * tidak mewajibkan apa pun.
  */
 export const getRequiredDocuments = (opts: {
   isOperator: boolean;
   isMechanic: boolean;
+  isFtap?: boolean;
 }): string[] => {
+  if (opts.isFtap) return [...FTAP_REQUIRED_DOCUMENTS];
   if (opts.isOperator) return REQUIRED_OPERATOR_DOCUMENTS;
   if (opts.isMechanic) return REQUIRED_MECHANIC_DOCUMENTS;
   return [];
