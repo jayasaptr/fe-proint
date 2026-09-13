@@ -362,6 +362,8 @@ const FilterBar = ({
         </div>
         <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
           <MultiSelect
+            // Bagian dari search bar gabungan: tanpa border sendiri (default MultiSelect kini berborder)
+            className="border-0 shadow-none bg-transparent"
             options={categories.map((c: any) => ({
               label: c.PosAdtName,
               value: c.PosAdtTypeId.toString(),
@@ -375,6 +377,8 @@ const FilterBar = ({
         </div>
         <div className="flex-1 flex items-center px-4 py-1 md:py-0 min-w-0">
           <MultiSelect
+            // Bagian dari search bar gabungan: tanpa border sendiri (default MultiSelect kini berborder)
+            className="border-0 shadow-none bg-transparent"
             groups={optionGroups.length > 0 ? optionGroups : undefined}
             options={optionGroups.length === 0 ? [] : undefined}
             selected={(selectedOptionIds || []).map(String)}
