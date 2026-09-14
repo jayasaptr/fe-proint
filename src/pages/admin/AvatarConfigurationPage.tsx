@@ -39,6 +39,15 @@ import { toast } from "sonner";
 type Engine = "emoji" | "toon" | "musetalk";
 type ToonStyle = "toon" | "photo" | "emoji3d" | "cartoon";
 
+/**
+ * Production ships one path only: the CPU puppet built from an uploaded, already-stylized portrait
+ * ("Ringan (CPU)" + "Foto asli"). The other engines (Emoji vector, MuseTalk GPU) and the AI/filter
+ * restyles stay in the code for development and come back with VITE_AVATAR_ADVANCED=true.
+ */
+const ADVANCED = ((import.meta.env.VITE_AVATAR_ADVANCED as string | undefined) ?? "").trim().toLowerCase() === "true";
+const DEFAULT_ENGINE: Engine = ADVANCED ? "emoji" : "toon";
+const DEFAULT_STYLE: ToonStyle = ADVANCED ? "emoji3d" : "photo";
+
 const TOON_STYLES: { value: ToonStyle; label: string; hint: string; ai?: boolean }[] = [
   { value: "emoji3d", label: "Emoji 3D (AI)", hint: "Foto digambar ulang bergaya emoji 3D oleh Stable Diffusion di CPU, ±15–60 detik", ai: true },
   { value: "cartoon", label: "Kartun flat (AI)", hint: "Ilustrasi kartun garis tebal, ±15–60 detik", ai: true },
@@ -329,8 +338,8 @@ const AvatarConfigurationPage = () => {
   const queryKey = ["ai-interview-avatar"];
   const { data, isLoading, error } = useQuery({ queryKey, queryFn: getInterviewAvatar, staleTime: 15_000, retry: 1 });
   const cfg = data?.data ?? null;
-  const [engine, setEngine] = useState<Engine>("emoji");
-  const [style, setStyle] = useState<ToonStyle>("emoji3d");
+  const [engine, setEngine] = useState<Engine>(DEFAULT_ENGINE);
+  const [style, setStyle] = useState<ToonStyle>(DEFAULT_STYLE);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editing, setEditing] = useState<AvatarPhoto | null>(null);
@@ -423,14 +432,15 @@ const AvatarConfigurationPage = () => {
     }
   };
 
-  const avatars = cfg?.avatars ?? [];
+  // Simple mode lists only what it can create; leftovers from other engines stay reachable in advanced mode
+  const avatars = (cfg?.avatars ?? []).filter((a) => ADVANCED || a.engine === "toon");
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-8">
       <div>
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Avatar Configuration</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Avatar AI interviewer yang dilihat kandidat. Satu avatar menjadi default; tiap undangan interview bisa memilih avatar lain di Opsi.
+          Avatar AI interviewer yang dilihat kandidat. Tiap kandidat mendapat salah satu avatar secara acak; tiap undangan interview bisa memilih avatar tertentu di Opsi.
         </p>
       </div>
 
@@ -439,38 +449,45 @@ const AvatarConfigurationPage = () => {
       {/* Create */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
         <h2 className="text-sm font-medium text-slate-800 dark:text-slate-200">Buat avatar baru</h2>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {(
+        {!ADVANCED && (
+          <p className="mt-1 text-xs text-slate-500">
+            Unggah gambar avatar (ilustrasi/karakter menghadap depan, mulut tertutup). Mata, alis, dan mulut dianimasikan di browser kandidat tanpa GPU.
+          </p>
+        )}
+        {ADVANCED && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {(
             [
-              { id: "emoji", icon: Smile, title: "Emoji (vektor)", desc: "Karakter kartun 3D-look yang dicocokkan dari foto, bisa diedit. Tanpa GPU, gerak paling lengkap." },
-              { id: "toon", icon: Cpu, title: "Ringan (CPU)", desc: "Foto digambar ulang AI (emoji 3D / kartun), filter kartun, atau foto asli; mulut dan ekspresi dianimasikan di browser." },
-              { id: "musetalk", icon: Sparkles, title: "Realistis (GPU)", desc: "Foto atau video asli, mulut dirender MuseTalk per kalimat. Butuh worker GPU." },
-            ] as { id: Engine; icon: typeof Smile; title: string; desc: string }[]
-          ).map((opt) => {
-            const Icon = opt.icon;
-            const disabled = !engineAvailable[opt.id];
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => setEngine(opt.id)}
-                className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-xs transition disabled:opacity-40 ${
-                  engine === opt.id ? "border-orange-400 bg-orange-50 dark:bg-orange-500/10" : "border-slate-200 hover:border-slate-300 dark:border-slate-700"
-                }`}
-              >
-                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
-                <span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">{opt.title}</span>
-                  <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{opt.desc}</span>
-                  {disabled && <span className="mt-1 block text-[11px] text-rose-500">Nonaktif di server AI</span>}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                { id: "emoji", icon: Smile, title: "Emoji (vektor)", desc: "Karakter kartun 3D-look yang dicocokkan dari foto, bisa diedit. Tanpa GPU, gerak paling lengkap." },
+                { id: "toon", icon: Cpu, title: "Ringan (CPU)", desc: "Foto digambar ulang AI (emoji 3D / kartun), filter kartun, atau foto asli; mulut dan ekspresi dianimasikan di browser." },
+                { id: "musetalk", icon: Sparkles, title: "Realistis (GPU)", desc: "Foto atau video asli, mulut dirender MuseTalk per kalimat. Butuh worker GPU." },
+              ] as { id: Engine; icon: typeof Smile; title: string; desc: string }[]
+            ).map((opt) => {
+              const Icon = opt.icon;
+              const disabled = !engineAvailable[opt.id];
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setEngine(opt.id)}
+                  className={`flex items-start gap-2.5 rounded-xl border p-3 text-left text-xs transition disabled:opacity-40 ${
+                    engine === opt.id ? "border-orange-400 bg-orange-50 dark:bg-orange-500/10" : "border-slate-200 hover:border-slate-300 dark:border-slate-700"
+                  }`}
+                >
+                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+                  <span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{opt.title}</span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{opt.desc}</span>
+                    {disabled && <span className="mt-1 block text-[11px] text-rose-500">Nonaktif di server AI</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {engine === "toon" && (
+          {ADVANCED && engine === "toon" && (
             <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 p-0.5 text-[11px] dark:border-slate-700" role="radiogroup" aria-label="Gaya avatar ringan">
               {TOON_STYLES.map((s) => {
                 const disabled = Boolean(s.ai) && !stylizerReady;
@@ -495,7 +512,7 @@ const AvatarConfigurationPage = () => {
           )}
           <Button size="sm" onClick={() => fileRef.current?.click()} disabled={uploading || !engineAvailable[engine]} className="h-9 bg-slate-900 text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900">
             {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ImagePlus className="mr-1.5 h-4 w-4" />}
-            {uploading ? "Menyiapkan…" : engine === "musetalk" ? "Unggah foto / video" : "Unggah foto referensi"}
+            {uploading ? "Menyiapkan…" : engine === "musetalk" ? "Unggah foto / video" : ADVANCED ? "Unggah foto referensi" : "Unggah gambar avatar"}
           </Button>
           {engine === "emoji" && (
             <Button size="sm" variant="outline" onClick={() => void onCreateBlank()} disabled={uploading} className="h-9">
@@ -508,11 +525,18 @@ const AvatarConfigurationPage = () => {
             </span>
           )}
         </div>
-        <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
-          Foto: close-up menghadap depan, mulut tertutup rileks, latar polos, JPG/PNG/WebP maks {MAX_PHOTO_MB} MB. Video (GPU saja): 10–20 detik diam
-          menghadap kamera, MP4/WebM/MOV maks {MAX_VIDEO_MB} MB. Untuk engine Emoji, foto hanya dipakai membaca ciri (warna kulit, rambut, hijab,
-          kacamata) dan tidak pernah ditampilkan ke kandidat. Pemakaian wajah orang nyata pada engine lain memerlukan persetujuan tertulis pemiliknya.
-        </p>
+        {ADVANCED ? (
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+            Foto: close-up menghadap depan, mulut tertutup rileks, latar polos, JPG/PNG/WebP maks {MAX_PHOTO_MB} MB. Video (GPU saja): 10–20 detik diam
+            menghadap kamera, MP4/WebM/MOV maks {MAX_VIDEO_MB} MB. Untuk engine Emoji, foto hanya dipakai membaca ciri (warna kulit, rambut, hijab,
+            kacamata) dan tidak pernah ditampilkan ke kandidat. Pemakaian wajah orang nyata pada engine lain memerlukan persetujuan tertulis pemiliknya.
+          </p>
+        ) : (
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+            Gambar: wajah close-up menghadap depan, mulut tertutup rileks, latar polos, JPG/PNG/WebP maks {MAX_PHOTO_MB} MB. Gambar ditampilkan apa adanya
+            kepada kandidat. Pemakaian wajah orang nyata memerlukan persetujuan tertulis pemiliknya.
+          </p>
+        )}
       </div>
 
       {/* List */}
@@ -526,7 +550,7 @@ const AvatarConfigurationPage = () => {
           <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center dark:border-slate-700">
             <UserRound className="mx-auto mb-2 h-8 w-8 text-slate-300" />
             <p className="text-sm font-medium text-slate-500">Belum ada avatar</p>
-            <p className="mt-1 text-xs text-slate-400">Kandidat melihat avatar vektor bawaan sampai satu avatar dibuat dan diaktifkan.</p>
+            <p className="mt-1 text-xs text-slate-400">Kandidat melihat avatar vektor bawaan sampai satu avatar {ADVANCED ? "dibuat" : "diunggah"}.</p>
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -536,7 +560,8 @@ const AvatarConfigurationPage = () => {
                 <div key={a.id} className={`overflow-hidden rounded-2xl border bg-white dark:bg-slate-900 ${a.active ? "border-orange-400 ring-1 ring-orange-300" : "border-slate-200 dark:border-slate-800"}`}>
                   <div className="relative aspect-[4/3] overflow-hidden bg-slate-100 dark:bg-slate-800">
                     <AvatarPreview avatar={a} className="h-full w-full" />
-                    {a.active && (
+                    {/* "Default" only matters in advanced mode (GPU worker fallback); candidates get a random pick */}
+                    {ADVANCED && a.active && (
                       <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-medium text-white">
                         <CheckCircle2 className="h-3 w-3" /> Default
                       </span>
@@ -547,7 +572,9 @@ const AvatarConfigurationPage = () => {
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">{a.source_name || a.id}</div>
                         <div className="truncate text-[11px] text-slate-400">
-                          {a.kind === "video"
+                          {!ADVANCED
+                            ? `${a.width}×${a.height}`
+                            : a.kind === "video"
                             ? `video · ${a.frames} frame`
                             : a.engine === "toon"
                               ? STYLE_LABEL[(a.style as ToonStyle) ?? "toon"] ?? a.style
@@ -556,13 +583,15 @@ const AvatarConfigurationPage = () => {
                                 : `${a.width}×${a.height}`}
                         </div>
                       </div>
-                      <Badge variant="outline" className={`shrink-0 border-0 text-[10px] ${ENGINE_BADGE[eng]}`}>{ENGINE_LABEL[eng]}</Badge>
+                      {ADVANCED && <Badge variant="outline" className={`shrink-0 border-0 text-[10px] ${ENGINE_BADGE[eng]}`}>{ENGINE_LABEL[eng]}</Badge>}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      <Button size="sm" variant={a.active ? "ghost" : "outline"} className="h-8 text-xs" onClick={() => void onActivate(a)} disabled={a.active || busyId !== null}>
-                        {busyId === a.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
-                        {a.active ? "Default" : "Jadikan default"}
-                      </Button>
+                      {ADVANCED && (
+                        <Button size="sm" variant={a.active ? "ghost" : "outline"} className="h-8 text-xs" onClick={() => void onActivate(a)} disabled={a.active || busyId !== null}>
+                          {busyId === a.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
+                          {a.active ? "Default" : "Jadikan default"}
+                        </Button>
+                      )}
                       {a.engine === "emoji" && (
                         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setEditing(a)} disabled={busyId !== null}>
                           <Pencil className="mr-1 h-3.5 w-3.5" /> Edit

@@ -8,7 +8,8 @@ import {
   type LoginResult,
 } from "@/lib/api/interviewPortal";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, ArrowRight, Bot, CheckCircle2, Clock, Loader2, Mic, MonitorUp, Video, Volume2 } from "lucide-react";
+import DHImg from "@/assets/dh.png";
+import { AlertCircle, ArrowRight, CheckCircle2, Clock, Loader2, Mic, MonitorUp, Video, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -46,8 +47,9 @@ const Shell = ({ company, children }: { company?: string; children: React.ReactN
     />
     <div className="relative mx-auto flex min-h-screen w-full max-w-lg flex-col px-4 py-8 sm:px-6 sm:py-14">
       <header className="mb-8 flex items-center justify-center gap-3 sm:mb-10">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#FFBE00] shadow-sm">
-          <Bot className="h-5 w-5 text-slate-900" />
+        {/* Company logo (orange sun) on white: on the brand yellow it would lose contrast */}
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700">
+          <img src={DHImg} alt="PT Darma Henwa Tbk" className="h-full w-full object-contain" />
         </span>
         <div className="leading-tight">
           <div className="text-sm font-semibold tracking-tight">AI Interview</div>

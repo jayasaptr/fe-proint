@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useLiveTranscription, type SttEngine } from "@/hooks/useLiveTranscription";
 import { useSessionRecorder } from "@/hooks/useSessionRecorder";
+import DHImg from "@/assets/dh.png";
 import AiAvatar, { type AvatarState } from "@/components/interview/AiAvatar";
 import EmojiAvatar from "@/components/interview/EmojiAvatar";
 import ToonAvatar from "@/components/interview/ToonAvatar";
@@ -20,7 +21,7 @@ import {
   type SpeechVideo,
 } from "@/lib/aiApi";
 import { createSpeechAnalyser, type SpeechAnalyser } from "@/lib/speechAnalyser";
-import type { InterviewHistoryItem } from "@/lib/api/interview";
+import type { AvatarPhoto, InterviewHistoryItem } from "@/lib/api/interview";
 import { MIC_CONSTRAINTS } from "@/lib/pcmCapture";
 import { RecordingUploader } from "@/lib/recordingUploader";
 import {
@@ -39,7 +40,6 @@ import { splitForSpeech, stripSpeechTags } from "@/lib/speech";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
-  Bot,
   CheckCircle2,
   Loader2,
   Mic,
@@ -124,6 +124,16 @@ interface CandidateInterviewRoomProps {
 }
 
 const countWords = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+
+/** FNV-1a 32-bit: a stable, well-spread non-negative number for a string (avatar pick per interview). */
+const hashString = (s: string): number => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+};
 
 const formatElapsed = (seconds: number) =>
   `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -230,16 +240,18 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   // back to MP3 + SVG avatar so a struggling worker cannot stall the interview.
   const { data: avatarConfig } = useQuery({ queryKey: ["ai-avatar-config"], queryFn: getAvatarConfig, staleTime: 60_000, retry: 1 });
   const [photoDisabled, setPhotoDisabled] = useState(false);
-  // The invitation may pin an avatar (HR's choice in the interview options); otherwise the global
-  // default. A pinned avatar that no longer exists falls back to the default as well.
+  // The invitation may pin an avatar (HR's choice in the interview options). Otherwise one of the
+  // usable avatars is picked at random, seeded by the interview token: the same candidate keeps the
+  // same face across the ready card, the room and a page reload, while different candidates spread
+  // over all avatars. A pinned avatar that no longer exists goes through the same random pick.
   const activeAvatar = (() => {
     if (!avatarConfig?.enabled) return null;
+    const usable = (a: AvatarPhoto) => a.engine === "toon" || a.engine === "emoji" || avatarConfig.worker_ready !== false;
     const pinned = interview.avatar_id ? avatarConfig.avatars.find((a) => a.id === interview.avatar_id) : null;
-    if (pinned) {
-      const usable = pinned.engine === "toon" || pinned.engine === "emoji" || avatarConfig.worker_ready !== false;
-      if (usable) return pinned;
-    }
-    return avatarConfig.ready && avatarConfig.active ? avatarConfig.active : null;
+    if (pinned && usable(pinned)) return pinned;
+    const pool = avatarConfig.avatars.filter(usable);
+    if (pool.length === 0) return avatarConfig.ready && avatarConfig.active ? avatarConfig.active : null;
+    return pool[hashString(token) % pool.length];
   })();
   // "emoji": parametric vector character, "toon": CPU puppet; both drawn in the browser from plain TTS audio
   const emojiAvatar = activeAvatar?.engine === "emoji" ? activeAvatar : null;
@@ -1377,8 +1389,8 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
           {/* Top bar: position · timer + REC · progress */}
           <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#FFBE00]">
-                <Bot className="h-4 w-4 text-slate-900" />
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white p-0.5">
+                <img src={DHImg} alt="PT Darma Henwa Tbk" className="h-full w-full object-contain" />
               </span>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-sm font-medium">{interview.position}</div>
@@ -1517,8 +1529,8 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
                     <div className="relative flex h-24 w-24 items-center justify-center">
                       {isTtsPlaying && <span className="absolute inset-0 animate-ping rounded-full bg-[#FFBE00]/15" />}
                       <span className="absolute inset-2 rounded-full bg-[#FFBE00]/10" />
-                      <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#FFBE00]">
-                        <Bot className="h-7 w-7 text-slate-900" />
+                      <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-white p-2">
+                        <img src={DHImg} alt="AI Interviewer PT Darma Henwa Tbk" className="h-full w-full object-contain" />
                       </span>
                     </div>
                   </div>

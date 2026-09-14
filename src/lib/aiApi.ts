@@ -286,6 +286,8 @@ export interface ToonMeta {
   mouth_center: [number, number];
   mouth_width: number;
   colors: { skin: string; lip: string; mouth: string };
+  /** Source PNG had transparency: the puppet is drawn over the tile's own background, no fill. Absent on older avatars (= opaque). */
+  has_alpha?: boolean;
 }
 
 export const getToonMeta = async (avatarId: string): Promise<ToonMeta> => {

@@ -495,10 +495,9 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
     return id && id in STT_ENGINE_LABELS ? STT_ENGINE_LABELS[id as SttEngine] : null;
   })();
 
-  // Avatar interviewer per undangan: daftar dari halaman Avatar Configuration; "auto" = avatar default
+  // Avatar interviewer per undangan: daftar dari halaman Avatar Configuration; "auto" = acak per undangan
   const { data: avatarData } = useQuery({ queryKey: ["ai-interview-avatar"], queryFn: getInterviewAvatar, staleTime: 30_000, retry: 1 });
   const avatarList = avatarData?.data?.avatars ?? [];
-  const defaultAvatar = avatarData?.data?.active ?? null;
   const avatarEngineLabel = (engine?: string) => (engine === "emoji" ? "Emoji" : engine === "toon" ? "Ringan" : "Realistis");
 
   const defaultJob = useMemo(
@@ -757,7 +756,7 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
               <SelectTrigger className="h-9 text-sm bg-white dark:bg-slate-900"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">
-                  Otomatis{defaultAvatar ? ` (default: ${defaultAvatar.source_name || defaultAvatar.id})` : " (avatar vektor bawaan)"}
+                  {avatarList.length > 1 ? `Acak (salah satu dari ${avatarList.length} avatar)` : avatarList.length === 1 ? `Otomatis (${avatarList[0].source_name || avatarList[0].id})` : "Otomatis (avatar vektor bawaan)"}
                 </SelectItem>
                 {avatarList.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
@@ -767,7 +766,7 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
               </SelectContent>
             </Select>
             <p className="text-[11px] text-slate-400">
-              Kandidat melihat avatar ini sepanjang sesi. Tambah atau ubah avatar di{" "}
+              Kandidat melihat avatar ini sepanjang sesi; pada pilihan acak, avatar ditentukan sekali per undangan. Tambah atau ubah avatar di{" "}
               <Link to="/admin/avatar" className="text-orange-600 hover:underline dark:text-orange-400">Avatar Configuration</Link>.
             </p>
           </div>

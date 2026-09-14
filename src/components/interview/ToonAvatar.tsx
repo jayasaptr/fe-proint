@@ -14,7 +14,12 @@ import { useEffect, useRef, useState } from "react";
  * - eyes: random blinks, drawn as skin-colored lids closing over the eye polygons;
  * - brows: cut out server-side (inpainted away in the base image) and drawn as patches that lift
  *   with emphasis, curiosity ("thinking") and attention;
- * - head: breathing, a bob while talking, nods while the candidate speaks, a tilt when thinking.
+ * - background: solid black around an opaque picture; a transparent PNG keeps its alpha (server side
+ *   too) and the tile background shows through;
+ * - head: breathing, a bob while talking, nods while the candidate speaks, a slight sideways lean when
+ *   listening/thinking. The picture is never rotated: the whole rectangle (background and shoulders
+ *   included) would turn with it and read as a tilted photo frame, not a head. The untouched portrait
+ *   is drawn underneath so the few pixels the moving copy uncovers at the edges show the same image.
  *
  * All per-frame work is a handful of drawImage/fill calls at the photo's own resolution (<= 768 px),
  * cheap enough for phones. Honors prefers-reduced-motion (lip-sync and blinks stay).
@@ -188,7 +193,7 @@ const ToonAvatar = ({ avatarId, state, analyser = null, attentive = false, class
 
     let open = 0;
     let spread = 0.4;
-    let tilt = 0;
+    let lean = 0; // px, sideways; replaces rotation (see header comment)
     let headY = 0;
     let browLift = 0;
     let breath = 1;
@@ -223,8 +228,8 @@ const ToonAvatar = ({ avatarId, state, analyser = null, attentive = false, class
 
       const targetBrow = s === "thinking" ? -0.05 : s === "speaking" ? -open * 0.03 : s === "listening" ? -0.012 : 0;
       browLift = lerp(browLift, targetBrow * faceW, 0.12);
-      const targetTilt = reduceMotion ? 0 : s === "thinking" ? 3.5 : s === "listening" ? -2 : 0;
-      tilt = lerp(tilt, targetTilt, 0.05);
+      const targetLean = reduceMotion ? 0 : s === "thinking" ? faceW * 0.02 : s === "listening" ? -faceW * 0.012 : 0;
+      lean = lerp(lean, targetLean, 0.05);
 
       let targetY = 0;
       let targetBreath = 1;
@@ -247,9 +252,10 @@ const ToonAvatar = ({ avatarId, state, analyser = null, attentive = false, class
 
       // ---- draw
       ctx.clearRect(0, 0, meta.width, meta.height);
+      // Underlay: fills the edge strips the shifted/scaled copy leaves uncovered with the same picture
+      ctx.drawImage(base, 0, 0);
       ctx.save();
-      ctx.translate(fcx, fcy + headY);
-      ctx.rotate((tilt * Math.PI) / 180);
+      ctx.translate(fcx + lean, fcy + headY);
       ctx.scale(breath, breath);
       ctx.translate(-fcx, -fcy);
 
@@ -380,11 +386,13 @@ const ToonAvatar = ({ avatarId, state, analyser = null, attentive = false, class
   }, [assets]);
 
   const wrapperClass = /\b(absolute|fixed|relative)\b/.test(className ?? "") ? (className as string) : `relative ${className ?? ""}`;
+  // Transparent source: the tile's own background shows around the character. Opaque source: a solid
+  // black fills the letterbox so the picture's edges never read as a framed photo. Unknown yet
+  // (meta still loading): black, which is what every opaque upload ends up with anyway.
+  const transparent = assets?.meta.has_alpha === true;
 
   return (
-    <div className={wrapperClass}>
-      {/* Blurred fill behind the letterboxed portrait, like the photo tile */}
-      <img src={toonAssetUrl(avatarId, "toon.png")} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-xl" />
+    <div className={`${wrapperClass} ${transparent ? "" : "bg-black"}`}>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" aria-label="AI interviewer" role="img" />
       {!assets && !error && (
         <img src={toonAssetUrl(avatarId, "toon.png")} alt="AI interviewer" className="absolute inset-0 h-full w-full object-contain" />
