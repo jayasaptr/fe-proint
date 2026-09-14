@@ -48,6 +48,8 @@ export interface InterviewSummary {
   model?: string | null;
   /** Engine speech-to-text pilihan HR (whisper | whisper_cloud | deepgram); null = default server AI. */
   stt_engine?: string | null;
+  /** Avatar interviewer pilihan HR; null = avatar aktif global. */
+  avatar_id?: string | null;
   status: InterviewStatus;
   overall_score?: number | null;
   recommendation?: string | null;
@@ -98,6 +100,8 @@ export interface InterviewInvitePayload {
   total_questions?: number;
   provider?: LlmProvider;
   stt_engine?: SttEngine;
+  /** Avatar interviewer untuk undangan ini (id di server AI); kosong = avatar aktif global. */
+  avatar_id?: string;
 }
 
 export interface InterviewRecordResponse {
@@ -157,6 +161,104 @@ export const regenerateInterviewReport = async (
     provider ? { provider } : {},
     { timeout: 330_000 },
   );
+  return response.data;
+};
+
+// ---------------------------------------------------------------------------- avatar foto (global)
+// Laravel mem-proxy ke AI Interview API sambil menambahkan kunci admin; browser tidak memegang kunci.
+
+export interface AvatarPhoto {
+  id: string;
+  width: number;
+  height: number;
+  created_at: number;
+  source_name?: string;
+  active?: boolean;
+  /** "image" = foto (hanya mulut bergerak); "video" = klip sumber diputar (kedip, gerak kepala, gestur). */
+  kind?: "image" | "video";
+  frames?: number;
+  cycle_frames?: number;
+  fps?: number;
+  duration_s?: number;
+  has_idle?: boolean;
+  frames_dropped?: number;
+  /** "musetalk" (GPU, realistis), "toon" (CPU, puppet dari foto), "emoji" (vektor parametrik). */
+  engine?: "musetalk" | "toon" | "emoji";
+  /** Engine emoji: parameter tampilan karakter. */
+  params?: Record<string, unknown>;
+  /** Engine toon: "toon" = gaya kartun, "photo" = foto asli, "emoji3d"/"cartoon" = digambar ulang AI (stylizer CPU). */
+  style?: "toon" | "photo" | "emoji3d" | "cartoon";
+  /** Catatan persiapan: peringatan (toon), pemakaian model visi (emoji). */
+  extra?: { warnings?: string[]; mouth_rest_gap?: number; vision_used?: boolean; stylize?: { style: string; seconds: number } };
+}
+
+export interface AvatarSettings {
+  enabled: boolean;
+  gpu_enabled?: boolean;
+  toon_enabled?: boolean;
+  emoji_enabled?: boolean;
+  /** Worker stylizer CPU (gaya emoji3d/cartoon) terjangkau. */
+  stylizer_ready?: boolean;
+  ready: boolean;
+  worker_ready?: boolean;
+  device?: string | null;
+  active: AvatarPhoto | null;
+  avatars: AvatarPhoto[];
+  error?: string | null;
+}
+
+export interface AvatarSettingsResponse {
+  success: boolean;
+  message: string;
+  data: AvatarSettings | null;
+}
+
+export const getInterviewAvatar = async (): Promise<AvatarSettingsResponse> => {
+  const response = await api.get(`${localApiBaseUrl}/ai-interview/avatar`);
+  return response.data;
+};
+
+/**
+ * Unggah sumber avatar baru: foto (JPG/PNG/WebP) atau video pendek (MP4/WebM/MOV, 10-20 detik).
+ * Deteksi wajah + persiapan per frame berjalan di server: foto < 1 detik, video sekitar 30-60 detik.
+ */
+export const uploadInterviewAvatar = async (
+  source: File,
+  activate = true,
+  engine: "auto" | "musetalk" | "toon" | "emoji" = "auto",
+  style: "toon" | "photo" | "emoji3d" | "cartoon" = "toon",
+) => {
+  const formData = new FormData();
+  formData.append("source", source);
+  formData.append("activate", activate ? "1" : "0");
+  formData.append("engine", engine);
+  formData.append("style", style);
+  const response = await api.post(`${localApiBaseUrl}/ai-interview/avatar`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 360_000,
+  });
+  return response.data as { success: boolean; message: string; data: (AvatarSettings & { avatar?: AvatarPhoto }) | null };
+};
+
+/** Editor avatar emoji: simpan parameter tampilan (dan nama tampilan) lewat Laravel. */
+export const updateEmojiAvatarParams = async (avatarId: string, params: Record<string, unknown>, name?: string) => {
+  const response = await api.put(`${localApiBaseUrl}/ai-interview/avatar/${encodeURIComponent(avatarId)}/params`, { params, name });
+  return response.data as { success: boolean; message: string; data: (AvatarSettings & { avatar?: AvatarPhoto }) | null };
+};
+
+/** Avatar emoji baru yang dirancang manual (tanpa foto). */
+export const createEmojiAvatar = async (name: string, params: Record<string, unknown> = {}, activate = false) => {
+  const response = await api.post(`${localApiBaseUrl}/ai-interview/avatar/emoji`, { name, params, activate });
+  return response.data as { success: boolean; message: string; data: (AvatarSettings & { avatar?: AvatarPhoto }) | null };
+};
+
+export const activateInterviewAvatar = async (avatarId: string): Promise<AvatarSettingsResponse> => {
+  const response = await api.post(`${localApiBaseUrl}/ai-interview/avatar/${encodeURIComponent(avatarId)}/activate`);
+  return response.data;
+};
+
+export const deleteInterviewAvatar = async (avatarId: string): Promise<AvatarSettingsResponse> => {
+  const response = await api.delete(`${localApiBaseUrl}/ai-interview/avatar/${encodeURIComponent(avatarId)}`);
   return response.data;
 };
 

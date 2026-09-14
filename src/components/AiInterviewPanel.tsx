@@ -23,6 +23,8 @@ import {
 import { llmProviderLabel, type LlmProvider } from "@/lib/api/screening";
 import { getSttConfig, isSttEngineAvailable, STT_ENGINE_LABELS, STT_ENGINES, type SttEngine } from "@/lib/aiApi";
 import { formatInterviewScore, interviewRecommendationLabel } from "@/components/InterviewScoreChip";
+import { getInterviewAvatar } from "@/lib/api/interview";
+import { Link } from "react-router-dom";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -493,6 +495,11 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
     return id && id in STT_ENGINE_LABELS ? STT_ENGINE_LABELS[id as SttEngine] : null;
   })();
 
+  // Avatar interviewer per undangan: daftar dari halaman Avatar Configuration; "auto" = acak per undangan
+  const { data: avatarData } = useQuery({ queryKey: ["ai-interview-avatar"], queryFn: getInterviewAvatar, staleTime: 30_000, retry: 1 });
+  const avatarList = avatarData?.data?.avatars ?? [];
+  const avatarEngineLabel = (engine?: string) => (engine === "emoji" ? "Emoji" : engine === "toon" ? "Ringan" : "Realistis");
+
   const defaultJob = useMemo(
     () => [...jobs].sort((a, b) => Number(a.priority ?? 99) - Number(b.priority ?? 99))[0] ?? null,
     [jobs],
@@ -508,6 +515,8 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
   const [provider, setProvider] = useState<string>("auto");
   // "auto" = engine STT default server AI (STT_ENGINE); selain itu whisper | whisper_cloud | deepgram
   const [sttEngine, setSttEngine] = useState<string>("auto");
+  // "auto" = avatar default global; selain itu id avatar dari Avatar Configuration
+  const [avatarId, setAvatarId] = useState<string>("auto");
   const [isInviting, setIsInviting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -542,6 +551,7 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
         total_questions: Number(totalQuestions) || undefined,
         provider: provider === "auto" ? undefined : (provider as LlmProvider),
         stt_engine: sttEngine === "auto" ? undefined : (sttEngine as SttEngine),
+        avatar_id: avatarId === "auto" ? undefined : avatarId,
       });
       if (res.success && res.data) {
         toast.success("Undangan interview dibuat. Bagikan link dan kode akses ke kandidat.");
@@ -739,6 +749,26 @@ const AiInterviewPanel = ({ candidateId, candidateName, jobs }: AiInterviewPanel
               placeholder="Satu persyaratan per baris. AI akan menggali tiap persyaratan dalam wawancara."
               className="text-sm bg-white dark:bg-slate-900"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500">Avatar interviewer untuk undangan ini</Label>
+            <Select value={avatarId} onValueChange={setAvatarId}>
+              <SelectTrigger className="h-9 text-sm bg-white dark:bg-slate-900"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">
+                  {avatarList.length > 1 ? `Acak (salah satu dari ${avatarList.length} avatar)` : avatarList.length === 1 ? `Otomatis (${avatarList[0].source_name || avatarList[0].id})` : "Otomatis (avatar vektor bawaan)"}
+                </SelectItem>
+                {avatarList.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.source_name || a.id} — {avatarEngineLabel(a.engine)}{a.kind === "video" ? " · video" : ""}{a.active ? " · default" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-slate-400">
+              Kandidat melihat avatar ini sepanjang sesi; pada pilihan acak, avatar ditentukan sekali per undangan. Tambah atau ubah avatar di{" "}
+              <Link to="/admin/avatar" className="text-orange-600 hover:underline dark:text-orange-400">Avatar Configuration</Link>.
+            </p>
           </div>
         </div>
       )}

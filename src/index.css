@@ -127,3 +127,16 @@
     font-weight: 300;
     }
 }
+
+/* Photo avatar in the candidate room: a slow, tiny zoom keeps a still photo from looking frozen */
+@keyframes avatar-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025); }
+}
+.avatar-breathe {
+  animation: avatar-breathe 7s ease-in-out infinite;
+  transform-origin: 50% 40%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-breathe { animation: none; }
+}
