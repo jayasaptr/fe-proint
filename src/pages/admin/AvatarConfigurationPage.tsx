@@ -545,7 +545,17 @@ const AvatarConfigurationPage = () => {
         {isLoading ? (
           <p className="flex items-center gap-1.5 text-sm text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Memuat…</p>
         ) : error || !cfg ? (
-          <p className="text-sm text-rose-500">Daftar avatar tidak bisa dimuat dari server AI.</p>
+          <div className="space-y-1">
+            <p className="text-sm text-rose-500">Daftar avatar tidak bisa dimuat dari server AI.</p>
+            {/* The actual reason (Laravel route missing, FastAPI unreachable, old server version) saves a devtools trip */}
+            <p className="text-xs text-slate-400">
+              {(() => {
+                const status = (error as { response?: { status?: number } } | null)?.response?.status;
+                const detail = error ? extractMessage(error, "") : "Respons server kosong";
+                return `${status ? `HTTP ${status}` : "Tanpa respons"}${detail ? ` · ${detail}` : ""}`;
+              })()}
+            </p>
+          </div>
         ) : avatars.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center dark:border-slate-700">
             <UserRound className="mx-auto mb-2 h-8 w-8 text-slate-300" />

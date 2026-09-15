@@ -36,6 +36,12 @@ export interface RaceMaster {
   Race?: string;
 }
 
+// Master agama dari HRIS (PMReligion): ReligionId + nama (Islam, Kristen, ...).
+export interface ReligionMaster {
+  ReligionId: number;
+  Religion?: string;
+}
+
 export const getEduLevels = (search?: string) =>
   fetchMasterList<EduLevelMaster>("edulevels", search ? { search } : {});
 
@@ -47,3 +53,5 @@ export const getMaritalStatuses = (search?: string) =>
 
 export const getRaces = (search?: string) =>
   fetchMasterList<RaceMaster>("races", search ? { search } : {});
+
+export const getReligions = () => fetchMasterList<ReligionMaster>("religions");

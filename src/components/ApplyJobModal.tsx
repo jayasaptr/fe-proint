@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { getReligions, type ReligionMaster } from "@/lib/api/masters";
 import {
   ALLOWED_DOCUMENT_LABEL,
   buildOperatorPosition,
@@ -183,6 +184,7 @@ export const ApplyJobModal = ({
     blood_type: "",
     email: "",
     race_id: "",
+    religion_id: "",
 
     // Contact Address
     id_card_address: "",
@@ -403,6 +405,11 @@ export const ApplyJobModal = ({
   const [hasMoreBirthCity, setHasMoreBirthCity] = useState(false);
   const [openBirthCity, setOpenBirthCity] = useState(false);
   const [isLoadingBirthCities, setIsLoadingBirthCities] = useState(false);
+
+  // Master agama dari HRIS (PMReligion) — hanya beberapa baris, cukup dimuat sekali
+  // tanpa pencarian/paginasi seperti master lain.
+  const [religions, setReligions] = useState<ReligionMaster[]>([]);
+  const [isLoadingReligions, setIsLoadingReligions] = useState(false);
 
   const [races, setRaces] = useState<{ RaceId: number; Race: string }[]>([]);
   const [searchRace, setSearchRace] = useState("");
@@ -658,6 +665,24 @@ export const ApplyJobModal = ({
       }
     };
     fetchQuestions();
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setIsLoadingReligions(true);
+    getReligions()
+      .then((data) => {
+        if (!cancelled) setReligions(data);
+      })
+      .catch((error) => {
+        if (!cancelled) console.error("Error fetching religions:", error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingReligions(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   React.useEffect(() => {
@@ -1924,6 +1949,33 @@ export const ApplyJobModal = ({
                     </Popover>
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="religion">Agama</Label>
+                    <Select
+                      value={formData.religion_id}
+                      onValueChange={(value) =>
+                        handleSelectChange("religion_id", value)
+                      }
+                    >
+                      <SelectTrigger id="religion" className="w-full">
+                        <SelectValue
+                          placeholder={
+                            isLoadingReligions ? "Memuat..." : "Pilih Agama"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent className="z-[160]">
+                        {religions.map((religion) => (
+                          <SelectItem
+                            key={religion.ReligionId}
+                            value={religion.ReligionId.toString()}
+                          >
+                            {religion.Religion || religion.ReligionId}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="photo">Pas Foto (Max 2MB)</Label>
                     <Input
                       id="photo"
@@ -3121,7 +3173,11 @@ export const ApplyJobModal = ({
                           newArr[index].description = e.target.value;
                           setDocuments(newArr);
                         }}
-                        placeholder="Contoh: CV Lengkap, Ijazah, Transkrip"
+                        // FTAP: CV s.d. Sertifikat TOEFL sudah menjadi baris wajib di atas,
+                        // jadi baris tambahan tidak perlu contoh deskripsi (dibiarkan kosong).
+                        placeholder={
+                          isFtapPosition ? "" : "Contoh: CV Lengkap, Ijazah, Transkrip"
+                        }
                       />
                       {doc.required && DOCUMENT_FULL_NAMES[doc.description] && (
                         <p className="text-xs text-slate-500">

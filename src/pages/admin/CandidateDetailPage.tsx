@@ -39,7 +39,7 @@ import {
   type CandidateFilters,
   type UpdateCandidateResponse,
 } from "@/lib/api/candidates";
-import { getMaritalStatuses } from "@/lib/api/masters";
+import { getMaritalStatuses, getReligions } from "@/lib/api/masters";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -295,6 +295,21 @@ const CandidateDetailPage: React.FC = () => {
     );
     return match?.MaritalSt || String(rawId);
   }, [candidate?.CanMaritalStId, maritalStatuses]);
+
+  // Nama agama dari master HRIS (PMReligion); fallback ke ID mentah bila master gagal dimuat.
+  const { data: religions = [] } = useQuery({
+    queryKey: ["master", "religions"],
+    queryFn: () => getReligions(),
+    staleTime: 30 * 60 * 1000,
+  });
+  const religionLabel = useMemo(() => {
+    const rawId = candidate?.CanReligionId;
+    if (rawId === null || rawId === undefined || rawId === "") return null;
+    const match = religions.find(
+      (item) => String(item.ReligionId) === String(rawId),
+    );
+    return match?.Religion || String(rawId);
+  }, [candidate?.CanReligionId, religions]);
 
   // Tujuan tombol Back: list asal (dikirim lewat location.state.from oleh CandidatesPage);
   // bila dibuka langsung lewat URL, kandidat FTAP kembali ke list FTAP, lainnya ke list umum.
@@ -1111,10 +1126,7 @@ const CandidateDetailPage: React.FC = () => {
                   label="Gender"
                   value={formatGender(candidate.CanSex)}
                 />
-                <InfoRow
-                  label="Religion"
-                  value={candidate.CanReligionId?.toString()}
-                />
+                <InfoRow label="Religion" value={religionLabel} />
                 <InfoRow
                   label="Marital Status"
                   value={maritalStatusLabel}
