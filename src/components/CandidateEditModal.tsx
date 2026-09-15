@@ -36,7 +36,12 @@ import {
   type UpdateCandidatePayload,
   type UpdateCandidateResponse,
 } from "@/lib/api/candidates";
-import { getEduLevels, getMaritalStatuses, getRaces } from "@/lib/api/masters";
+import {
+  getEduLevels,
+  getMaritalStatuses,
+  getRaces,
+  getReligions,
+} from "@/lib/api/masters";
 import {
   buildCandidateEditForm,
   buildUpdateCandidatePayload,
@@ -204,6 +209,13 @@ const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
   const { data: races = [] } = useQuery({
     queryKey: ["master", "races"],
     queryFn: () => getRaces(),
+    enabled: open,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: religions = [] } = useQuery({
+    queryKey: ["master", "religions"],
+    queryFn: () => getReligions(),
     enabled: open,
     staleTime: 10 * 60 * 1000,
   });
@@ -614,20 +626,31 @@ const CandidateEditModal: React.FC<CandidateEditModalProps> = ({
                   </Select>
                 </Field>
 
-                <Field
-                  label="ID Agama"
-                  htmlFor="religion_id"
-                  errors={errors.religion_id}
-                  hint="Belum ada master agama di FE — isi dengan ID dari ERP."
-                >
-                  <Input
-                    id="religion_id"
-                    type="number"
-                    value={demographics.religion_id}
-                    onChange={(e) =>
-                      setDemographic("religion_id", e.target.value)
+                <Field label="Agama" errors={errors.religion_id}>
+                  <Select
+                    value={demographics.religion_id || NONE_VALUE}
+                    onValueChange={(value) =>
+                      setDemographic(
+                        "religion_id",
+                        value === NONE_VALUE ? "" : value,
+                      )
                     }
-                  />
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE_VALUE}>-</SelectItem>
+                      {religions.map((item) => (
+                        <SelectItem
+                          key={item.ReligionId}
+                          value={String(item.ReligionId)}
+                        >
+                          {item.Religion || item.ReligionId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Field>
 
                 <Field label="Golongan Darah" errors={errors.blood_type}>
