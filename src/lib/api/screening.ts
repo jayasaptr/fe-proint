@@ -44,6 +44,87 @@ export interface ScreeningRecentExperience {
   highlights?: string;
 }
 
+/**
+ * Hasil verifikasi satu dokumen pendukung: metadata deterministik dari server AI (jenis terdeteksi,
+ * kecocokan label, nama kandidat tercantum) digabung dengan penilaian LLM (ai_*).
+ */
+export interface ScreeningDocumentCheck {
+  index: number;
+  id?: number | null;
+  /** Label yang dipilih kandidat saat mengunggah (mis. "Sertifikat TOEFL / IELTS"). */
+  label: string;
+  filename?: string | null;
+  detected_type?: string;
+  detected_label?: string;
+  label_match?: "sesuai" | "tidak sesuai" | "tidak dipastikan" | "tidak terbaca" | string;
+  name_match?: boolean | null;
+  /** Dokumen identitas (KTP/KK/...): isinya tidak dikirim ke LLM, hanya jenisnya dicek. */
+  sensitive?: boolean;
+  method?: "embedded" | "ocr" | "none" | string;
+  chars?: number;
+  error?: string | null;
+  ai_status?: "sesuai" | "tidak sesuai" | "perlu dicek" | "tidak terbaca" | string | null;
+  ai_detected?: string | null;
+  ai_note?: string | null;
+}
+
+/** Verifikasi klaim yang diisi kandidat (skor TOEFL/IELTS, pendidikan, sertifikasi) terhadap dokumen & CV. */
+export interface ScreeningProfileCheck {
+  claim?: string;
+  /** Apa yang tertulis di profil/form/CV beserta sumbernya, mis. "Form FTAP: IELTS 9.0". */
+  claimed?: string | null;
+  /** Apa yang benar-benar ditunjukkan dokumen yang diunggah. */
+  found?: string | null;
+  status?: "terbukti" | "tidak terbukti" | "bertentangan" | string;
+  evidence?: string | null;
+  /** true = klaim menyangkut persyaratan HR/program (bukan sekadar nilai tambah). */
+  important?: boolean;
+  /** Poin yang dikurangi sistem dari skor karena klaim ini (0 bila tidak ada). */
+  penalty?: number;
+}
+
+/** Satu catatan perbedaan antara klaim kandidat (profil/label dokumen) dan isi dokumen yang diunggah. */
+export interface ScreeningDiscrepancy {
+  type: "klaim" | "dokumen" | string;
+  status: string;
+  important?: boolean;
+  title: string;
+  claimed?: string | null;
+  found?: string | null;
+  penalty?: number;
+  document_index?: number | null;
+}
+
+export interface ScreeningScorePenalty {
+  code: string;
+  label: string;
+  points: number;
+}
+
+export interface ScreeningScoreCap {
+  code: string;
+  label: string;
+  max: number;
+}
+
+/**
+ * Rincian skor akhir yang dihitung server AI secara deterministik:
+ * base = (1-w)*llm + w*requirements, dikurangi penalti verifikasi, dibatasi cap.
+ */
+export interface ScreeningScoreBreakdown {
+  llm_score?: number | null;
+  requirements_score?: number | null;
+  requirements_weight?: number;
+  base_score?: number | null;
+  penalties?: ScreeningScorePenalty[];
+  penalty_total?: number;
+  penalty_max?: number;
+  caps?: ScreeningScoreCap[];
+  applied_cap?: ScreeningScoreCap | null;
+  final_score?: number | null;
+  documents_checked?: boolean;
+}
+
 export interface ScreeningResult {
   candidate_name?: string;
   match_score?: number;
@@ -79,6 +160,16 @@ export interface ScreeningResult {
   cv_chars?: number;
   cv_truncated?: boolean;
   profile_chars?: number;
+  /** Verifikasi dokumen pendukung (satu entri per dokumen yang dikirim). */
+  documents?: ScreeningDocumentCheck[];
+  documents_count?: number;
+  profile_checks?: ScreeningProfileCheck[];
+  /** Skor & rekomendasi mentah dari LLM sebelum penyesuaian sistem (match_score = skor akhir). */
+  llm_score?: number | null;
+  llm_recommendation?: string | null;
+  score_breakdown?: ScreeningScoreBreakdown | null;
+  /** Catatan perbedaan klaim vs dokumen; hasil lama (sebelum fitur ini) tidak memilikinya. */
+  discrepancies?: ScreeningDiscrepancy[];
 }
 
 export interface ScreeningRecord {
@@ -86,6 +177,8 @@ export interface ScreeningRecord {
   candidate_id: number;
   job_expected_id?: number | null;
   document_id?: number | null;
+  /** Dokumen pendukung yang ikut diverifikasi pada run ini; null = tanpa dokumen pendukung. */
+  supporting_document_ids?: number[] | null;
   position: string;
   requirements?: string | null;
   provider?: string | null;
@@ -129,6 +222,8 @@ export interface ScreeningRunPayload {
   position?: string;
   requirements?: string;
   provider?: LlmProvider;
+  /** false = jangan sertakan dokumen pendukung (ijazah, transkrip, sertifikat) pada run ini. */
+  include_documents?: boolean;
 }
 
 export interface ScreeningRunResponse {
@@ -194,7 +289,7 @@ export interface BulkScreeningResponse {
 
 export const bulkScreenCandidates = async (
   candidateIds: number[],
-  options: { provider?: LlmProvider; requirements?: string } = {},
+  options: { provider?: LlmProvider; requirements?: string; include_documents?: boolean } = {},
 ): Promise<BulkScreeningResponse> => {
   const response = await api.post(
     `${localApiBaseUrl}/candidates/ai-screening/bulk`,
