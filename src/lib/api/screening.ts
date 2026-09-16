@@ -55,12 +55,20 @@ export interface ScreeningDocumentCheck {
   label: string;
   filename?: string | null;
   detected_type?: string;
+  /** Semua jenis yang ditemukan di file (bundel: cv, sim, simper, ...). */
+  detected_types?: string[];
   detected_label?: string;
   label_match?: "sesuai" | "tidak sesuai" | "tidak dipastikan" | "tidak terbaca" | string;
   name_match?: boolean | null;
   /** Dokumen identitas (KTP/KK/...): isinya tidak dikirim ke LLM, hanya jenisnya dicek. */
   sensitive?: boolean;
-  method?: "embedded" | "ocr" | "none" | string;
+  /** Jumlah halaman identitas di dalam bundel yang isinya disembunyikan dari LLM. */
+  sensitive_pages?: number;
+  method?: "embedded" | "ocr" | "mixed" | "none" | string;
+  pages_total?: number;
+  pages_ocr?: number;
+  /** Halaman gambar yang tidak dibaca karena batas OCR per screening tercapai. */
+  pages_skipped?: number;
   chars?: number;
   error?: string | null;
   ai_status?: "sesuai" | "tidak sesuai" | "perlu dicek" | "tidak terbaca" | string | null;

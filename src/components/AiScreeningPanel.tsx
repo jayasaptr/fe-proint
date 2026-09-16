@@ -169,6 +169,8 @@ const profileCheckStatus = (status?: string | null) => {
     return { icon: XCircle, cls: "text-rose-600 dark:text-rose-400", label: "Bertentangan" };
   if (value === "tidak terbukti")
     return { icon: MinusCircle, cls: "text-amber-600 dark:text-amber-400", label: "Tidak terbukti" };
+  if (value.includes("sebagian"))
+    return { icon: MinusCircle, cls: "text-amber-600 dark:text-amber-400", label: "Sebagian terbukti" };
   return { icon: CircleHelp, cls: "text-slate-400", label: status || "-" };
 };
 
@@ -299,7 +301,20 @@ const DocumentChecksView = ({ documents }: { documents: ScreeningDocumentCheck[]
                       <UserX className="w-3 h-3" /> nama tidak ditemukan
                     </span>
                   )}
-                  {doc.method === "ocr" && <span className="text-[11px] text-amber-500">dibaca via OCR</span>}
+                  {(doc.pages_total ?? 0) > 1 && (
+                    <span className="text-[11px] text-slate-400" title="Satu file bisa memuat beberapa dokumen (surat lamaran, CV, scan SIM/KIMPER/ijazah)">
+                      {doc.pages_total} halaman{doc.pages_ocr ? `, ${doc.pages_ocr} via OCR` : ""}
+                      {doc.sensitive_pages ? `, ${doc.sensitive_pages} identitas disembunyikan` : ""}
+                    </span>
+                  )}
+                  {(doc.pages_total ?? 0) <= 1 && (doc.method === "ocr" || doc.method === "mixed") && (
+                    <span className="text-[11px] text-amber-500">dibaca via OCR</span>
+                  )}
+                  {(doc.pages_skipped ?? 0) > 0 && (
+                    <span className="text-[11px] text-amber-500" title="Batas OCR per screening tercapai; halaman ini belum diverifikasi">
+                      {doc.pages_skipped} halaman gambar tidak dibaca
+                    </span>
+                  )}
                 </div>
                 {detected && (doc.ai_status ?? doc.label_match) !== "tidak terbaca" && (
                   <p className="text-xs text-slate-600 dark:text-slate-400">
