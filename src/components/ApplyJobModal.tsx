@@ -1180,6 +1180,31 @@ export const ApplyJobModal = ({
       return;
     }
 
+    // Riwayat pendidikan wajib ada minimal satu baris lengkap. Baris tanpa
+    // Tingkat/Institusi dibuang saat build payload, sehingga tanpa cek ini
+    // pelamar bisa lolos dengan data pendidikan kosong di sistem.
+    const incompleteEducation = educations.findIndex(
+      (edu) => !edu.edu_level_id || !edu.edu_institution_id.trim(),
+    );
+    if (educations.length === 0) {
+      toast.error("Riwayat Pendidikan Formal wajib diisi minimal satu.");
+      return;
+    }
+    if (incompleteEducation !== -1) {
+      const edu = educations[incompleteEducation];
+      const rowLabel = `Riwayat Pendidikan #${incompleteEducation + 1}`;
+      toast.error(
+        !edu.edu_level_id
+          ? `${rowLabel}: Tingkat wajib dipilih.`
+          : `${rowLabel}: Institusi wajib diisi.`,
+      );
+      return;
+    }
+    if (!educations.some((edu) => edu.is_last_education)) {
+      toast.error("Tandai salah satu riwayat sebagai pendidikan terakhir.");
+      return;
+    }
+
     // Baris pengalaman hanya ikut terkirim bila company_name dan position
     // terisi (lihat filter saat build payload). Tanpa cek ini, baris yang
     // setengah terisi hilang diam-diam tanpa pelamar sadar.
