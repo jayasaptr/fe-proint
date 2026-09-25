@@ -14,15 +14,24 @@ interface SttMessage {
   description?: string;
 }
 
+// After "stop" the server transcribes whatever audio is still buffered and then closes the socket.
+// Local Whisper on CPU can take a few seconds for a long tail; give up waiting after this.
+const FINALIZE_TIMEOUT_MS = 12_000;
+
 /**
  * Streams raw 16 kHz PCM from the microphone to the AI Interview API's live STT WebSocket
  * (Deepgram proxy `/stt/live`, or `/stt/whisper-live?engine=whisper|whisper_cloud` for local
  * Whisper / Whisper via OpenRouter). Final segments accumulate in `transcript`; `interim` holds
  * the in-flight partial for live preview (always empty for whisper_cloud).
+ *
+ * Push-to-talk friendly: `stop()` flushes the microphone buffer, asks the server to finalize and
+ * resolves with the complete transcript only after the server has sent its last segment (socket
+ * closed) or the wait timed out. `isFinalizing` is true meanwhile.
  */
 export function useLiveTranscription(engine: SttEngine = "whisper") {
   const [isRecording, setIsRecording] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [interim, setInterim] = useState("");
   const [segments, setSegments] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +39,13 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
   const wsRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopCaptureRef = useRef<StopCapture | null>(null);
+  // Mirror of `segments` readable synchronously (stop() returns the transcript before React re-renders)
+  const segmentsRef = useRef<string[]>([]);
+
+  const pushSegment = useCallback((text: string) => {
+    segmentsRef.current = [...segmentsRef.current, text];
+    setSegments(segmentsRef.current);
+  }, []);
 
   const cleanup = useCallback(async () => {
     const stopCapture = stopCaptureRef.current;
@@ -41,18 +57,48 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
     setIsConnecting(false);
   }, []);
 
-  const stop = useCallback(async () => {
-    // Flush the capture buffer first, then ask the server to finalize; it closes the socket
-    // after the last transcript.
+  /** Resolve when `ws` has closed, or after the finalize timeout (the socket is then closed locally). */
+  const waitForClose = (ws: WebSocket) =>
+    new Promise<void>((resolve) => {
+      if (ws.readyState === WebSocket.CLOSED) return resolve();
+      const timer = window.setTimeout(() => {
+        ws.close();
+        resolve();
+      }, FINALIZE_TIMEOUT_MS);
+      ws.addEventListener(
+        "close",
+        () => {
+          window.clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+
+  const stop = useCallback(async (): Promise<string> => {
+    const ws = wsRef.current;
+    wsRef.current = null;
+    // Flush the capture buffer first so the last ~250 ms of speech reaches the server before "stop".
     await cleanup();
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send("stop");
+    if (!ws) return segmentsRef.current.join(" ");
+    if (ws.readyState === WebSocket.OPEN) {
+      setIsFinalizing(true);
+      try {
+        ws.send("stop");
+        await waitForClose(ws);
+      } finally {
+        setIsFinalizing(false);
+      }
+    } else {
+      ws.close(); // still connecting: nothing was sent, drop the socket
     }
+    return segmentsRef.current.join(" ");
   }, [cleanup]);
 
   const start = useCallback(async () => {
     setError(null);
     setInterim("");
+    segmentsRef.current = [];
     setSegments([]);
     setIsConnecting(true);
 
@@ -82,10 +128,21 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
     wsRef.current = ws;
 
     ws.onopen = async () => {
+      if (wsRef.current !== ws) {
+        ws.close(); // stop() was called while connecting
+        return;
+      }
       try {
         stopCaptureRef.current = await startPcmCapture(stream, (chunk) => {
           if (ws.readyState === WebSocket.OPEN) ws.send(chunk);
         });
+        if (wsRef.current !== ws) {
+          // stop() ran while the worklet was loading: release what was just created
+          const stopCapture = stopCaptureRef.current;
+          stopCaptureRef.current = null;
+          await stopCapture?.();
+          return;
+        }
         setIsConnecting(false);
         setIsRecording(true);
       } catch (err) {
@@ -104,7 +161,7 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
       if (isWhisper) {
         if (msg.type === "interim") setInterim(msg.text ?? "");
         else if (msg.type === "final") {
-          if (msg.text) setSegments((prev) => [...prev, msg.text as string]);
+          if (msg.text) pushSegment(msg.text);
           setInterim("");
         } else if (msg.type === "error") setError(msg.message ?? "Transcription error");
         return;
@@ -113,7 +170,7 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
         const text = msg.channel?.alternatives?.[0]?.transcript ?? "";
         if (!text) return;
         if (msg.is_final) {
-          setSegments((prev) => [...prev, text]);
+          pushSegment(text);
           setInterim("");
         } else {
           setInterim(text);
@@ -124,8 +181,11 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
     };
 
     ws.onerror = () => setError("Koneksi ke layanan transkripsi gagal.");
-    ws.onclose = () => void cleanup();
-  }, [cleanup, stop, engine]);
+    ws.onclose = () => {
+      if (wsRef.current === ws) wsRef.current = null; // closed by the server, not by stop()
+      void cleanup();
+    };
+  }, [cleanup, stop, engine, pushSegment]);
 
   // Stop everything if the component unmounts mid-recording
   useEffect(() => {
@@ -136,6 +196,7 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
   }, [cleanup]);
 
   const reset = useCallback(() => {
+    segmentsRef.current = [];
     setSegments([]);
     setInterim("");
   }, []);
@@ -143,6 +204,7 @@ export function useLiveTranscription(engine: SttEngine = "whisper") {
   return {
     isRecording,
     isConnecting,
+    isFinalizing,
     interim,
     transcript: segments.join(" "),
     error,

@@ -43,11 +43,11 @@ import {
   CheckCircle2,
   Loader2,
   Mic,
-  MicOff,
   MonitorUp,
   Play,
   RefreshCw,
   Send,
+  Square,
   Timer,
   Volume2,
   X,
@@ -98,11 +98,7 @@ const requestScreenShare = async (): Promise<MediaStream> => {
 const isScreenShareSupported = (): boolean =>
   typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getDisplayMedia === "function";
 
-const SILENCE_SUBMIT_MS = 2500; // pause listening and show the review step after this much silence (mic on)
 const REVIEW_AUTO_SEND_S = 15; // review step sends automatically after this many idle seconds
-const BARGE_IN_MIN_WORDS = 4; // sustained speech required to interrupt the AI voice
-const BARGE_IN_GRACE_MS = 800; // ignore barge-in right after playback starts (AEC settling)
-const MIN_ANSWER_WORDS = 3; // don't auto-submit shorter (likely noise) answers
 const MAX_QA_ROUNDS = 3; // candidate questions answered before closing
 
 const QA_INVITE =
@@ -122,8 +118,6 @@ interface CandidateInterviewRoomProps {
   interview: InterviewSessionConfig;
   candidateName?: string | null;
 }
-
-const countWords = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
 /** FNV-1a 32-bit: a stable, well-spread non-negative number for a string (avatar pick per interview). */
 const hashString = (s: string): number => {
@@ -149,9 +143,10 @@ const TileLabel = ({ children }: { children: React.ReactNode }) => (
 const PANEL_CLASS = "rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3.5 sm:px-5 sm:py-4";
 
 /**
- * Ruang interview kandidat: pertanyaan dibacakan (TTS), kandidat menjawab dengan suara (live STT),
- * jawaban terkirim otomatis setelah jeda. Semua giliran LLM lewat portal Laravel; kandidat tidak
- * pernah melihat skor. Transkrip disimpan setelah tiap jawaban agar sesi terputus bisa dilanjutkan.
+ * Ruang interview kandidat: pertanyaan dibacakan (TTS), kandidat menjawab dengan suara (live STT)
+ * secara push-to-talk: tekan "Mulai Bicara", jawab (jeda berpikir tidak memotong), tekan "Selesai
+ * Bicara", lalu periksa transkrip sebelum dikirim. Semua giliran LLM lewat portal Laravel; kandidat
+ * tidak pernah melihat skor. Transkrip disimpan setelah tiap jawaban agar sesi terputus bisa dilanjutkan.
  */
 const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName }: CandidateInterviewRoomProps) => {
   const [phase, setPhase] = useState<Phase>("ready");
@@ -179,14 +174,10 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const speechGenRef = useRef(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const lastActivityRef = useRef(Date.now());
   const answerRef = useRef("");
-  const interimRef = useRef("");
   const submittingRef = useRef(false);
   const clarifyingRef = useRef(false); // current question is a clarification request
   const clarifyCountRef = useRef(0); // clarifications already asked for the current answer
-  const interruptedRef = useRef(false);
-  const playbackStartedAtRef = useRef(0);
   const startedAtRef = useRef<number | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -280,9 +271,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   useEffect(() => {
     answerRef.current = answer;
   }, [answer]);
-  useEffect(() => {
-    interimRef.current = stt.interim;
-  }, [stt.interim]);
   // Answer follows the live transcript, appended to whatever was kept before the mic was resumed
   useEffect(() => {
     if (stt.transcript) setAnswer([answerPrefixRef.current, stt.transcript].filter(Boolean).join(" "));
@@ -330,35 +318,9 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const interruptTts = () => {
     speechGenRef.current += 1; // skip everything still queued
     stopPlayback();
-    interruptedRef.current = true;
     setIsTtsPlaying(false);
     setVideoVisible(false);
   };
-
-  // Speech activity from transcripts: refresh timer + barge-in while the AI is talking
-  useEffect(() => {
-    if (phase !== "interviewing" && phase !== "qa") return;
-    if (stt.interim || stt.transcript) lastActivityRef.current = Date.now();
-    if (isTtsPlaying) {
-      const pastGrace = Date.now() - playbackStartedAtRef.current > BARGE_IN_GRACE_MS;
-      if (pastGrace && countWords(stt.interim) >= BARGE_IN_MIN_WORDS) interruptTts();
-    }
-  }, [stt.interim, stt.transcript, isTtsPlaying, phase]);
-
-  // Silence watcher: when the candidate stops talking (mic on), pause the mic and open the review
-  // step instead of sending straight away, so a mis-transcribed answer can be fixed or re-spoken.
-  useEffect(() => {
-    if ((phase !== "interviewing" && phase !== "qa") || isThinking || isTtsPlaying || !stt.isRecording) return;
-    const id = window.setInterval(() => {
-      if (submittingRef.current) return;
-      const quiet = Date.now() - lastActivityRef.current > SILENCE_SUBMIT_MS;
-      if (quiet && countWords(answerRef.current) >= MIN_ANSWER_WORDS && !interimRef.current) {
-        void enterReview();
-      }
-    }, 400);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, isThinking, isTtsPlaying, stt.isRecording, question]);
 
   // Stop camera, screen share and recording audio on unmount
   useEffect(
@@ -512,7 +474,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const reshareScreen = async () => {
     if (cameraOnlyMode) {
       setScreenLost(false);
-      lastActivityRef.current = Date.now();
       return;
     }
     setIsResharing(true);
@@ -522,7 +483,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
       screenStreamRef.current = screen;
       await recorder.replaceScreen(screen);
       setScreenLost(false);
-      lastActivityRef.current = Date.now();
     } catch (err) {
       setReshareError(screenShareErrorMessage(err));
     } finally {
@@ -609,25 +569,42 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
   const micOn = stt.isRecording || stt.isConnecting;
   const isSpeaking = micOn && Boolean(stt.interim);
 
-  /** Start listening; the current answer text is kept and new speech is appended to it. */
+  /**
+   * "Mulai Bicara": start listening. The current answer text is kept and new speech is appended
+   * to it. Pressing it while the interviewer is still talking cuts the voice short (barge-in), so
+   * the open mic never picks up speaker echo.
+   */
   const resumeMic = () => {
+    if (isTtsPlaying) interruptTts();
     answerPrefixRef.current = answerRef.current.trim();
     setIsReviewing(false);
     setReviewCountdown(null);
     stt.reset();
     void stt.start();
-    lastActivityRef.current = Date.now();
+  };
+
+  /**
+   * "Selesai Bicara": stop the mic and wait for the server to transcribe the last buffered audio,
+   * so a sentence spoken right before the click is never lost. Returns the whole answer so far.
+   */
+  const finishListening = async (): Promise<string> => {
+    const tail = await stt.stop();
+    const full = [answerPrefixRef.current, tail].filter(Boolean).join(" ").trim();
+    answerRef.current = full;
+    setAnswer(full);
+    return full;
   };
 
   const toggleMic = () => {
+    if (stt.isFinalizing) return;
     if (micOn) void enterReview();
     else resumeMic();
   };
 
-  /** Pause the mic and show the transcript for checking before it is sent. */
+  /** Stop the mic and show the transcript for checking before it is sent. */
   const enterReview = async () => {
-    if (stt.isRecording || stt.isConnecting) await stt.stop();
-    if (!answerRef.current.trim()) return; // nothing to review yet
+    const text = micOn ? await finishListening() : answerRef.current.trim();
+    if (!text) return; // nothing was said: back to "Mulai Bicara"
     setIsReviewing(true);
     setReviewCountdown(REVIEW_AUTO_SEND_S);
   };
@@ -640,7 +617,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     setReviewCountdown(null);
     stt.reset();
     void stt.start();
-    lastActivityRef.current = Date.now();
   };
 
   const leaveReview = () => {
@@ -855,7 +831,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     const mediaPromise: Promise<SpeechMedia | null> =
       source instanceof Blob ? Promise.resolve({ kind: "audio", blob: source }) : synthesize(source);
     speechPendingRef.current += 1;
-    interruptedRef.current = false;
     setIsTtsPlaying(true);
     const run = speechChainRef.current
       .then(async () => {
@@ -869,7 +844,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
         // Text may show as spoken now: either the voice starts, or there is no voice to wait for
         options.onStart?.();
         if (!media) return;
-        playbackStartedAtRef.current = Date.now();
         await playMedia(media);
       })
       .catch(() => {
@@ -880,12 +854,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
         if (speechPendingRef.current === 0) {
           setIsTtsPlaying(false);
           setVideoVisible(false); // back to the still photo between turns
-          // Drop speaker echo picked up by an open mic, but never a real answer
-          if (!interruptedRef.current && countWords(answerRef.current) < BARGE_IN_MIN_WORDS) {
-            stt.reset();
-            setAnswer("");
-            lastActivityRef.current = Date.now();
-          }
         }
       });
     speechChainRef.current = run;
@@ -922,7 +890,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     setVoiced((v) => ({ reaction: alreadySpoken.reaction ? v.reaction : true, question: alreadySpoken.question ? v.question : true }));
     setQuestion({ ...data, reaction, question: questionText, speech: [data.reaction ?? "", data.question ?? ""] });
     setPhase("interviewing");
-    lastActivityRef.current = Date.now();
     // Speak whatever the stream did not already hand to the queue
     const remaining: string[] = [];
     if (!alreadySpoken.reaction && data.reaction) remaining.push(data.reaction);
@@ -986,7 +953,6 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     setPhase("qa");
     setAnswer("");
     stt.reset();
-    lastActivityRef.current = Date.now();
     void speak(QA_INVITE);
   };
 
@@ -996,7 +962,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     try {
       stopPlayback();
       setIsTtsPlaying(false);
-      if (stt.isRecording) await stt.stop();
+      if (micOn) await finishListening(); // include the last segment still being transcribed
       const candidateQuestion = answerRef.current.trim();
       if (!candidateQuestion) return;
       leaveReview();
@@ -1129,7 +1095,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     try {
       stopPlayback();
       setIsTtsPlaying(false);
-      if (stt.isRecording) await stt.stop();
+      if (micOn) await finishListening(); // include the last segment still being transcribed
       const finalAnswer = answerRef.current.trim();
       if (!finalAnswer) return;
       leaveReview();
@@ -1151,7 +1117,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
     if (!window.confirm("Akhiri interview sekarang? Jawaban yang sudah diberikan akan dikirim ke tim HR.")) return;
     stopPlayback();
     setIsTtsPlaying(false);
-    if (stt.isRecording) await stt.stop();
+    if (micOn) await finishListening();
     const pending = phase === "interviewing" ? answerRef.current.trim() : "";
     const finalHistory =
       pending && question
@@ -1176,21 +1142,25 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
 
   const statusText = isThinking
     ? "Jawaban terkirim. Interviewer sedang menyiapkan pertanyaan berikutnya…"
-    : isReviewing
-      ? "Periksa transkrip jawaban Anda. Perbaiki teksnya, bicara lagi, atau kirim."
-      : isTtsPlaying
-      ? isVoicePlaying
-        ? "AI sedang membacakan pertanyaan. Nyalakan mic dan bicara untuk menyela."
-        : "Menyiapkan suara interviewer…"
-      : micOn
-        ? isSpeaking
-          ? "Suara terdeteksi, silakan lanjutkan…"
-          : "Mendengarkan… berhenti bicara sekitar 2,5 detik dan jawaban terkirim otomatis."
-        : answer.trim()
-          ? "Mic dimatikan. Periksa jawaban Anda lalu klik Kirim."
-          : phase === "qa"
-            ? 'Tekan tombol mic untuk bertanya, atau klik "Lanjutkan" bila tidak ada.'
-            : "Tekan tombol mic di bawah untuk mulai menjawab.";
+    : stt.isFinalizing
+      ? "Memproses jawaban Anda…"
+      : isReviewing
+        ? "Periksa transkrip jawaban Anda. Perbaiki teksnya, lanjut bicara, atau kirim."
+        : isTtsPlaying
+          ? isVoicePlaying
+            ? "AI sedang membacakan pertanyaan. Tekan Mulai Bicara bila ingin langsung menjawab."
+            : "Menyiapkan suara interviewer…"
+          : micOn
+            ? stt.isConnecting
+              ? "Menyiapkan mikrofon…"
+              : isSpeaking
+                ? "Suara terdeteksi, silakan lanjutkan…"
+                : "Mendengarkan… Jawab dengan tenang, jeda tidak masalah. Tekan Selesai Bicara bila sudah selesai."
+            : answer.trim()
+              ? "Mic dimatikan. Periksa jawaban Anda lalu klik Kirim."
+              : phase === "qa"
+                ? 'Tekan Mulai Bicara untuk bertanya, atau klik "Lanjutkan" bila tidak ada.'
+                : "Tekan Mulai Bicara untuk menjawab, lalu Selesai Bicara bila sudah selesai.";
 
   const roomActive = ["interviewing", "qa", "closing", "saving"].includes(phase);
 
@@ -1306,8 +1276,11 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
             <span className="font-medium">{interview.position}</span>.
           </p>
           <ul className="list-disc pl-5 text-slate-500 space-y-1">
-            <li>Pertanyaan dibacakan dengan suara. Jawab dengan berbicara setelah menyalakan mic.</li>
-            <li>Berhenti bicara sekitar 2,5 detik dan jawaban terkirim otomatis, atau klik Kirim.</li>
+            <li>
+              Pertanyaan dibacakan dengan suara. Tekan <span className="font-medium">Mulai Bicara</span>, jawab, lalu tekan{" "}
+              <span className="font-medium">Selesai Bicara</span> bila sudah selesai.
+            </li>
+            <li>Tidak perlu terburu-buru: jeda saat berpikir tidak memotong jawaban. Transkrip bisa diperiksa dan diperbaiki sebelum dikirim.</li>
             <li>Di akhir sesi Anda boleh bertanya balik tentang posisi atau perusahaan.</li>
             <li>Browser akan meminta izin kamera dan mikrofon.</li>
             {screenRequired && (
@@ -1612,7 +1585,7 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
                       size="sm"
                       variant="ghost"
                       onClick={() => void doClosing(history, qaExchanges)}
-                      disabled={isThinking || micOn || isReviewing}
+                      disabled={isThinking || micOn || stt.isFinalizing || isReviewing}
                       className="h-9 rounded-full border border-white/15 px-4 text-white/80 hover:bg-white/10 hover:text-white"
                     >
                       Tidak ada, lanjutkan
@@ -1667,19 +1640,40 @@ const CandidateInterviewRoom = ({ token, sessionToken, interview, candidateName 
           {/* Floating controls */}
           <footer className="pointer-events-none fixed inset-x-0 bottom-0 z-[55] flex justify-center px-4 pb-5 sm:pb-6">
             <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/10 bg-[#15141d]/90 p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.7)] backdrop-blur-md">
+              {/* Push-to-talk: one labelled button that starts and ends the candidate's turn */}
               <button
                 type="button"
                 onClick={toggleMic}
-                disabled={(phase !== "interviewing" && phase !== "qa") || isThinking || screenLost}
-                title={micOn ? "Matikan mic" : "Nyalakan mic untuk berbicara"}
+                disabled={(phase !== "interviewing" && phase !== "qa") || isThinking || screenLost || stt.isFinalizing}
+                title={micOn ? "Selesai bicara: hentikan mic dan periksa jawaban" : "Mulai bicara: nyalakan mic"}
                 aria-pressed={micOn}
-                className={`flex h-12 w-12 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                  micOn ? "bg-emerald-500 text-white hover:bg-emerald-400" : "bg-white/10 text-white hover:bg-white/20"
+                className={`flex h-12 min-w-[11rem] items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                  micOn ? "bg-rose-500 text-white hover:bg-rose-400" : "bg-[#FFBE00] text-slate-900 hover:bg-[#FFDC1E]"
                 }`}
               >
-                {stt.isConnecting ? <Loader2 className="h-5 w-5 animate-spin" /> : micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+                {stt.isFinalizing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" /> Memproses…
+                  </>
+                ) : stt.isConnecting ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" /> Menyiapkan mic…
+                  </>
+                ) : micOn ? (
+                  <>
+                    <span className="relative flex h-5 w-5 items-center justify-center">
+                      <span className="absolute inset-0 animate-ping rounded-full bg-white/40" />
+                      <Square className="relative h-3.5 w-3.5 fill-current" />
+                    </span>
+                    Selesai Bicara
+                  </>
+                ) : (
+                  <>
+                    <Mic className="h-5 w-5" /> Mulai Bicara
+                  </>
+                )}
               </button>
-              {(phase === "interviewing" || phase === "qa") && !micOn && !isThinking && !isReviewing && answer.trim() && (
+              {(phase === "interviewing" || phase === "qa") && !micOn && !stt.isFinalizing && !isThinking && !isReviewing && answer.trim() && (
                 <Button
                   onClick={() => void enterReview()}
                   className="h-10 rounded-full bg-[#FFBE00] px-4 text-slate-900 shadow-none hover:bg-[#FFDC1E]"
