@@ -106,14 +106,14 @@ const LoginPage: React.FC = () => {
             )}
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-slate-900">Username</Label>
+                <Label htmlFor="username" className="text-slate-900">ID Karyawan</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-5" />
                   <Input
                     id="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter your username"
+                    placeholder="Masukkan ID Karyawan Anda"
                     type="text"
                     autoCapitalize="none"
                     autoComplete="username"
