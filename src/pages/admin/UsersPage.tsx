@@ -157,7 +157,7 @@ const UsersPage: React.FC = () => {
     e.preventDefault();
     setFormError("");
     if (!addForm.jde) {
-      setFormError("ID Karyawan wajib diisi");
+      setFormError("NIK wajib diisi");
       return;
     }
 
@@ -323,7 +323,7 @@ const UsersPage: React.FC = () => {
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Search by ID Karyawan..."
+              placeholder="Search by NIK..."
               className="pl-9 h-10 rounded-lg bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus-visible:ring-orange-500"
               value={searchTerm}
               onChange={(e) => {
@@ -341,7 +341,7 @@ const UsersPage: React.FC = () => {
                 <th className="px-6 py-4 font-medium tracking-wider w-16 text-center">
                   ID
                 </th>
-                <th className="px-6 py-4 font-medium tracking-wider">ID Karyawan</th>
+                <th className="px-6 py-4 font-medium tracking-wider">NIK</th>
                 <th className="px-6 py-4 font-medium tracking-wider">Name</th>
                 <th className="px-6 py-4 font-medium tracking-wider">Site</th>
                 <th className="px-6 py-4 font-medium tracking-wider text-center">
@@ -520,7 +520,7 @@ const UsersPage: React.FC = () => {
                   htmlFor="add-jde"
                   className="text-slate-900 dark:text-slate-300"
                 >
-                  ID Karyawan
+                  NIK
                 </Label>
                 <Input
                   id="add-jde"
@@ -723,7 +723,7 @@ const UsersPage: React.FC = () => {
                   htmlFor="edit-jde"
                   className="text-slate-900 dark:text-slate-300"
                 >
-                  ID Karyawan
+                  NIK
                 </Label>
                 <Input
                   id="edit-jde"
